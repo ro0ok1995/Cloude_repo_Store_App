@@ -1,13 +1,11 @@
 package com.example.ui.screens
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,405 +15,449 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Assessment
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.core.business.DebtEngine
-import com.example.core.model.Customer
-import com.example.data.localization.LocalStrings
-import com.example.ui.components.AddEditCustomerDialog
-import com.example.ui.components.RecordPaymentDialog
-import com.example.ui.components.StatusBadge
-import com.example.ui.components.ThemedHeaderBox
-import com.example.ui.theme.LocalAppThemeColors
-import com.example.ui.theme.FinancialDebt
-import com.example.ui.theme.FinancialPayment
-import com.example.ui.theme.FinancialPaymentContainer
-import com.example.ui.viewmodel.ScreenDestination
-import com.example.ui.viewmodel.ShopViewModel
+import com.example.model.CustomerAccount
+import com.example.model.LanguageMode
+import com.example.model.StoreStrings
+import com.example.model.TransactionItem
+import com.example.ui.components.SimpleEmptyState
+import com.example.ui.theme.GeoOutline
+import com.example.ui.theme.GeoOutlineVariant
+import com.example.ui.theme.GeoPrimary
+import com.example.ui.theme.StatusGreen
+import com.example.ui.theme.StatusGreenBg
+import com.example.ui.theme.StatusRed
+import com.example.ui.theme.StatusRedBg
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 /**
- * SCREEN 2: CUSTOMER DETAILS
- * Contextual screen for one selected customer providing the 3 primary actions:
- * 1. Record Purchase (CARD 1) -> Opens SCREEN 3 with customer preselected
- * 2. View Account Statement (CARD 2) -> Opens SCREEN 4 with customer preselected
- * 3. Record Payment (CARD 3) -> Opens Centered Modal Payment Dialog
+ * SmallStore CUSTOMER DETAILS Screen
+ *
+ * Rules:
+ * - TOP BAR: Back arrow + customer's name as the title.
+ * - CUSTOMER SUMMARY HEADER:
+ *   - A header card with: customer name, phone number, and current balance
+ *     (clearly shown, e.g., "Owes 150" or "Settled").
+ * - UNIFIED ACTIONS:
+ *   - Exactly three prominent action buttons/tiles in a row (or stacked on very small screens):
+ *     "Record Transaction", "Account Statement", "Payment".
+ *     These are the ONLY actions on this screen besides basic edit/delete for the customer.
+ *   - Tapping "Record Transaction" leads into the Purchases flow with this customer already pre-selected.
+ *   - Tapping "Account Statement" leads into Analysis Center -> Account Statement with this customer pre-selected.
+ *   - Tapping "Payment" leads into the Quick Payment flow with this customer pre-selected.
+ * - RECENT HISTORY:
+ *   - Below the actions, a short "Recent Activity" list scoped only to this customer
+ *     (same row style as Home's Latest Activities), newest first.
+ * - SECONDARY OPTIONS:
+ *   - A small overflow menu (three-dot icon) in the top bar for "Edit customer" and "Archive customer" only.
+ *     No "Delete permanently" here.
+ * - CONSTRAINTS:
+ *   - No tabs, charts, or extra statistics on this screen.
+ * - Default: simple light theme, RTL Arabic layout with plausible Arabic customer name ("خالد بن عبدالعزيز").
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomerDetailsScreen(
-    customerId: Long,
-    viewModel: ShopViewModel,
+    customer: CustomerAccount? = null,
+    transactions: List<TransactionItem> = emptyList(),
+    languageMode: LanguageMode = LanguageMode.ARABIC,
+    onBackClick: () -> Unit = {},
+    onRecordTransaction: (CustomerAccount) -> Unit = {},
+    onAccountStatement: (CustomerAccount) -> Unit = {},
+    onPayment: (CustomerAccount) -> Unit = {},
+    onEditCustomer: (CustomerAccount, String, String) -> Unit = { _, _, _ -> },
+    onArchiveCustomer: (CustomerAccount) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val strings = LocalStrings.current
-    val themeColors = LocalAppThemeColors.current
+    val isArabic = languageMode == LanguageMode.ARABIC
+    val currency = if (isArabic) "ر.س" else "SAR"
 
-    val allCustomers by viewModel.allActiveCustomers.collectAsStateWithLifecycle()
-    val customer = allCustomers.find { it.id == customerId }
-    val transactionsWithDetails by viewModel.filteredTransactionsWithDetails.collectAsStateWithLifecycle()
-
-    val customerTransactions = remember(transactionsWithDetails, customerId) {
-        transactionsWithDetails.filter { it.transaction.customerId == customerId }
+    // Plausible Arabic customer default for standalone rendering / fallback
+    val defaultCustomer = remember {
+        CustomerAccount(
+            id = "2",
+            customerName = "خالد بن عبدالعزيز",
+            balance = 1850.00,
+            totalDebt = 1850.00,
+            phone = "+966 55 987 6543",
+            lastTransactionDate = "2026-09-04"
+        )
     }
 
-    // Current outstanding debt (Strictly non-negative)
-    val customerDebt = remember(customerTransactions) {
-        DebtEngine.calculateOutstandingDebt(customerTransactions.map { it.transaction })
+    // Default sample transactions for this customer if none passed
+    val defaultCustomerTransactions = remember {
+        listOf(
+            TransactionItem(
+                id = "t4",
+                title = "دفعة بنكية",
+                customerName = "خالد بن عبدالعزيز",
+                activityType = "دفعة",
+                amount = 500.00,
+                isCredit = true,
+                date = "2026-09-04",
+                relativeTime = "أمس",
+                notes = "تحويل سريع"
+            ),
+            TransactionItem(
+                id = "t8",
+                title = "تسجيل مشتريات",
+                customerName = "خالد بن عبدالعزيز",
+                activityType = "مشتريات",
+                amount = 620.00,
+                isCredit = false,
+                date = "2026-08-30",
+                relativeTime = "منذ 5 أيام",
+                notes = "بضاعة آجلة"
+            ),
+            TransactionItem(
+                id = "t9",
+                title = "دفعة نقدية",
+                customerName = "خالد بن عبدالعزيز",
+                activityType = "دفعة",
+                amount = 400.00,
+                isCredit = true,
+                date = "2026-08-20",
+                relativeTime = "منذ أسبوعين",
+                notes = "سداد مستحقات"
+            )
+        )
     }
 
-    var showEditCustomerDialog by remember { mutableStateOf(false) }
-    var showPaymentDialog by remember { mutableStateOf(false) }
-
-    if (customer == null) {
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(strings.customerNotFound, color = Color.Gray, fontSize = 16.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedButton(onClick = { viewModel.closeCustomerDetails() }) {
-                    Text(strings.cancel)
-                }
-            }
-        }
-        return
+    val activeCustomer = customer ?: defaultCustomer
+    val scopedTransactions = if (customer != null && transactions.isNotEmpty()) {
+        transactions.filter { it.customerName == activeCustomer.customerName }
+    } else if (customer != null) {
+        emptyList()
+    } else {
+        defaultCustomerTransactions
     }
+
+    var showOverflowMenu by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showArchiveDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .testTag("customer_details_screen")
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 40.dp)
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
             // ==========================================
-            // HEADER (STORE IDENTITY & BACK NAVIGATION)
+            // 1. TOP BAR
+            // Back arrow + customer's name as title + three-dot overflow menu
             // ==========================================
-            item {
-                ThemedHeaderBox(
-                    modifier = Modifier.fillMaxWidth()
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 0.5.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 10.dp)
+                        .testTag("customer_details_top_bar"),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
+                    // Back Arrow
+                    IconButton(
+                        onClick = onBackClick,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 8.dp, end = 16.dp, top = 14.dp, bottom = 18.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .size(40.dp)
+                            .testTag("customer_details_back_button")
                     ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = if (isArabic) "رجوع" else "Back",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Customer Name as the Title
+                    Text(
+                        text = activeCustomer.customerName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            letterSpacing = (-0.2).sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("customer_details_title")
+                    )
+
+                    // Secondary Options: Overflow Menu (three-dot icon)
+                    Box {
                         IconButton(
-                            onClick = { viewModel.closeCustomerDetails() },
-                            modifier = Modifier.testTag("customer_details_back_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowBack,
-                                contentDescription = strings.cancel,
-                                tint = Color.White
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = customer.name,
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 19.sp
-                                ),
-                                maxLines = 1
-                            )
-                            Text(
-                                text = strings.customerDetailsTitle,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontSize = 12.sp
-                                )
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { showEditCustomerDialog = true },
+                            onClick = { showOverflowMenu = true },
                             modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color.White.copy(alpha = 0.18f))
-                                .testTag("edit_customer_header_btn")
+                                .size(40.dp)
+                                .testTag("customer_overflow_menu_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = strings.editCustomer,
-                                tint = Color.White,
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = if (isArabic) "خيارات إضافية" else "More options",
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-                    }
-                }
-            }
 
-            // ==========================================
-            // CUSTOMER INFO & DEBT HEADER CARD
-            // ==========================================
-            item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                        .testTag("customer_profile_card"),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp)
-                    ) {
-                        // Customer Identity Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        DropdownMenu(
+                            expanded = showOverflowMenu,
+                            onDismissRequest = { showOverflowMenu = false },
+                            modifier = Modifier.testTag("customer_overflow_dropdown")
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(54.dp)
-                                        .clip(CircleShape)
-                                        .background(themeColors.primaryContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
+                            DropdownMenuItem(
+                                text = {
                                     Text(
-                                        text = customer.name.take(1),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 24.sp,
-                                        color = themeColors.primary
+                                        text = if (isArabic) StoreStrings.EDIT_CUSTOMER_AR else StoreStrings.EDIT_CUSTOMER_EN,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
                                     )
-                                }
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showEditDialog = true
+                                },
+                                modifier = Modifier.testTag("menu_edit_customer")
+                            )
 
-                                Spacer(modifier = Modifier.width(14.dp))
-
-                                Column {
+                            DropdownMenuItem(
+                                text = {
                                     Text(
-                                        text = customer.name,
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 18.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        ),
-                                        maxLines = 1
+                                        text = if (isArabic) StoreStrings.ARCHIVE_CUSTOMER_AR else StoreStrings.ARCHIVE_CUSTOMER_EN,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.error
                                     )
-
-                                    if (customer.phone.isNotBlank()) {
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.clickable {
-                                                val intent = Intent(Intent.ACTION_DIAL).apply {
-                                                    data = Uri.parse("tel:${customer.phone}")
-                                                }
-                                                context.startActivity(intent)
-                                            }
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Phone,
-                                                contentDescription = null,
-                                                tint = themeColors.primary,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = customer.phone,
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    color = themeColors.primary,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            StatusBadge(status = customer.status)
-                        }
-
-                        if (customer.address.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "${strings.customerAddress}: ${customer.address}",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp
-                                )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Archive,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showArchiveDialog = true
+                                },
+                                modifier = Modifier.testTag("menu_archive_customer")
                             )
                         }
-
-                        Divider(
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            thickness = 1.dp,
-                            modifier = Modifier.padding(vertical = 16.dp)
-                        )
-
-                        // Outstanding Debt Section (Visually Prominent, Red indicator, ₪ Currency, Non-negative)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = strings.outstandingDebt,
-                                    style = MaterialTheme.typography.titleSmall.copy(
-                                        color = if (customerDebt.isPositive()) FinancialDebt.copy(alpha = 0.9f) else Color.Gray,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.sp
-                                    )
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = if (customerDebt.isPositive()) customerDebt.format() else strings.allCustomersSettled,
-                                    style = MaterialTheme.typography.headlineMedium.copy(
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 28.sp,
-                                        color = if (customerDebt.isPositive()) FinancialDebt else FinancialPayment
-                                    ),
-                                    modifier = Modifier.testTag("customer_detail_debt_text")
-                                )
-                            }
-                        }
                     }
                 }
             }
 
-            // ==========================================
-            // PRIMARY ACTIONS SECTION (3 LARGE CLEAR CARDS)
-            // ==========================================
-            item {
-                Text(
-                    text = strings.primaryActionsTitle,
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = themeColors.primary,
-                        fontSize = 14.sp
-                    ),
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                )
-            }
+            HorizontalDivider(color = GeoOutline, thickness = 1.dp)
 
-            // CARD 1: Record Purchase -> Open SCREEN 3 (Purchases) with Customer preselected
-            item {
-                PrimaryActionCard(
-                    icon = Icons.Default.ShoppingCart,
-                    iconTint = themeColors.primary,
-                    iconContainerColor = themeColors.primaryContainer,
-                    title = strings.recordPurchase,
-                    subtitle = strings.recordPurchaseDesc,
-                    onClick = {
-                        viewModel.openPurchasesForCustomer(customer)
-                    },
-                    testTag = "card_action_record_purchase"
-                )
-            }
+            // Scrollable Content
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
-            // CARD 2: View Account Statement -> Open SCREEN 4 (Statements) with Customer preselected
-            item {
-                PrimaryActionCard(
-                    icon = Icons.Default.Assessment,
-                    iconTint = themeColors.secondary,
-                    iconContainerColor = themeColors.primaryContainer.copy(alpha = 0.5f),
-                    title = strings.viewAccountStatement,
-                    subtitle = strings.viewAccountStatementDesc,
-                    onClick = {
-                        viewModel.openStatementsForCustomer(customer)
-                    },
-                    testTag = "card_action_view_statement"
-                )
-            }
+                // ==========================================
+                // 2. CUSTOMER SUMMARY HEADER CARD
+                // Customer name, phone number, and current balance (e.g., "Owes 150" or "Settled")
+                // ==========================================
+                item {
+                    CustomerSummaryHeaderCard(
+                        customer = activeCustomer,
+                        currency = currency,
+                        isArabic = isArabic
+                    )
+                }
 
-            // CARD 3: Record Payment -> Open Modal Payment Dialog with calm green accent
-            item {
-                PrimaryActionCard(
-                    icon = Icons.Default.Payments,
-                    iconTint = FinancialPayment,
-                    iconContainerColor = FinancialPaymentContainer,
-                    title = strings.recordPayment,
-                    subtitle = if (customerDebt.isPositive()) strings.recordPaymentDesc else strings.accountFullyPaid,
-                    onClick = { viewModel.openQuickPayment(customer) },
-                    testTag = "card_action_record_payment"
-                )
+                // ==========================================
+                // 3. UNIFIED ACTIONS
+                // Exactly three prominent action buttons/tiles in a row:
+                // "Record Transaction", "Account Statement", "Payment"
+                // ==========================================
+                item {
+                    UnifiedActionsRow(
+                        isArabic = isArabic,
+                        onRecordTransaction = { onRecordTransaction(activeCustomer) },
+                        onAccountStatement = { onAccountStatement(activeCustomer) },
+                        onPayment = { onPayment(activeCustomer) }
+                    )
+                }
+
+                // ==========================================
+                // 4. RECENT HISTORY (scoped only to this customer)
+                // Short "Recent Activity" list, newest first
+                // ==========================================
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (isArabic) StoreStrings.RECENT_ACTIVITY_AR else StoreStrings.RECENT_ACTIVITY_EN,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Text(
+                            text = if (isArabic) "أحدث العمليات" else "Latest records",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                if (scopedTransactions.isEmpty()) {
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, GeoOutlineVariant, RoundedCornerShape(14.dp))
+                        ) {
+                            SimpleEmptyState(
+                                message = if (isArabic) "لا توجد نشاطات مسجلة لهذا العميل." else "No activities recorded for this customer.",
+                                icon = Icons.Default.History,
+                                testTag = "customer_recent_empty_state"
+                            )
+                        }
+                    }
+                } else {
+                    items(items = scopedTransactions, key = { it.id }) { tx ->
+                        CustomerActivityRowCard(
+                            transaction = tx,
+                            currency = currency,
+                            isArabic = isArabic
+                        )
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 
     // ==========================================
-    // PAYMENT DIALOG (MODAL)
+    // 5. DIALOGS (Secondary Options)
+    // Edit Customer & Archive Customer
     // ==========================================
-    if (showPaymentDialog) {
-        RecordPaymentDialog(
-            customer = customer,
-            currentDebt = customerDebt,
-            onDismiss = { showPaymentDialog = false },
-            onConfirm = { amount, note ->
-                viewModel.submitPayment(customer.id, amount, note) {
-                    showPaymentDialog = false
+    if (showEditDialog) {
+        EditCustomerDialog(
+            customer = activeCustomer,
+            isArabic = isArabic,
+            onDismiss = { showEditDialog = false },
+            onSave = { newName, newPhone ->
+                onEditCustomer(activeCustomer, newName, newPhone)
+                showEditDialog = false
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        if (isArabic) "تم تحديث بيانات العميل بنجاح" else "Customer details updated successfully"
+                    )
                 }
             }
         )
     }
 
-    // Edit Customer Modal Dialog
-    if (showEditCustomerDialog) {
-        AddEditCustomerDialog(
-            customer = customer,
-            onDismiss = { showEditCustomerDialog = false },
-            onSave = { updated ->
-                viewModel.saveCustomer(updated) {
-                    showEditCustomerDialog = false
+    if (showArchiveDialog) {
+        ArchiveCustomerDialog(
+            customerName = activeCustomer.customerName,
+            isArabic = isArabic,
+            onDismiss = { showArchiveDialog = false },
+            onConfirmArchive = {
+                showArchiveDialog = false
+                onArchiveCustomer(activeCustomer)
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(
+                        if (isArabic) "تمت أرشفة العميل" else "Customer archived"
+                    )
                 }
             }
         )
@@ -423,83 +465,540 @@ fun CustomerDetailsScreen(
 }
 
 /**
- * Reusable large, clear primary action card with rounded corners, soft elevation, and distinct styling.
+ * Customer Summary Header Card:
+ * Displays customer name, phone number, and clearly shown current balance
+ * (e.g. "عليه 1,850.00 ر.س" or "تمت التسوية (خالص)").
  */
 @Composable
-private fun PrimaryActionCard(
-    icon: ImageVector,
-    iconTint: Color,
-    iconContainerColor: Color,
+private fun CustomerSummaryHeaderCard(
+    customer: CustomerAccount,
+    currency: String,
+    isArabic: Boolean
+) {
+    val hasDebt = customer.balance > 0
+    val isSettled = customer.balance == 0.0
+    val isStoreDue = customer.balance < 0
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(width = 1.dp, color = GeoOutlineVariant, shape = RoundedCornerShape(16.dp))
+            .testTag("customer_summary_card")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Customer Avatar Circle
+                Surface(
+                    color = GeoPrimary.copy(alpha = 0.12f),
+                    shape = CircleShape,
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = customer.customerName.take(1),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = GeoPrimary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                // Name & Phone
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = customer.customerName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag("header_customer_name")
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Phone,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = customer.phone.ifBlank { if (isArabic) "بدون رقم هاتف" else "No phone" },
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("header_customer_phone")
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(
+                color = GeoOutline.copy(alpha = 0.6f),
+                modifier = Modifier.padding(vertical = 14.dp)
+            )
+
+            // Current Balance Clearly Displayed
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("customer_balance_indicator"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isArabic) "الرصيد الحالي" else "Current Balance",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 13.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (isSettled) {
+                    Surface(
+                        color = StatusGreenBg,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("balance_settled_badge")
+                    ) {
+                        Text(
+                            text = if (isArabic) "تمت التسوية (خالص)" else "Settled",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StatusGreen,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                } else {
+                    val balanceLabel = if (hasDebt) {
+                        if (isArabic) {
+                            String.format(Locale.US, "عليه %,.2f %s", customer.balance, currency)
+                        } else {
+                            String.format(Locale.US, "Owes %,.2f %s", customer.balance, currency)
+                        }
+                    } else {
+                        if (isArabic) {
+                            String.format(Locale.US, "له %,.2f %s", -customer.balance, currency)
+                        } else {
+                            String.format(Locale.US, "Credit %,.2f %s", -customer.balance, currency)
+                        }
+                    }
+
+                    val badgeColor = if (hasDebt) StatusRed else StatusGreen
+                    val badgeBg = if (hasDebt) StatusRedBg else StatusGreenBg
+
+                    Surface(
+                        color = badgeBg,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("balance_amount_badge")
+                    ) {
+                        Text(
+                            text = balanceLabel,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeColor,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * UNIFIED ACTIONS:
+ * Exactly three prominent action buttons/tiles in a row:
+ * 1. "Record Transaction" (تسجيل معاملة)
+ * 2. "Account Statement" (كشف حساب)
+ * 3. "Payment" (دفعة)
+ */
+@Composable
+private fun UnifiedActionsRow(
+    isArabic: Boolean,
+    onRecordTransaction: () -> Unit,
+    onAccountStatement: () -> Unit,
+    onPayment: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("unified_actions_row"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Tile 1: "Record Transaction" -> leads into Purchases flow with pre-selected customer
+        ActionTile(
+            title = if (isArabic) StoreStrings.RECORD_TRANSACTION_AR else StoreStrings.RECORD_TRANSACTION_EN,
+            icon = Icons.AutoMirrored.Filled.ReceiptLong,
+            accentColor = GeoPrimary,
+            testTag = "action_record_transaction",
+            onClick = onRecordTransaction,
+            modifier = Modifier.weight(1f)
+        )
+
+        // Tile 2: "Account Statement" -> leads into Analysis Center -> Account Statement with pre-selected customer
+        ActionTile(
+            title = if (isArabic) StoreStrings.ACCOUNT_STATEMENT_AR else StoreStrings.ACCOUNT_STATEMENT_EN,
+            icon = Icons.Default.Assessment,
+            accentColor = MaterialTheme.colorScheme.onSurface,
+            testTag = "action_account_statement",
+            onClick = onAccountStatement,
+            modifier = Modifier.weight(1f)
+        )
+
+        // Tile 3: "Payment" -> leads into Quick Payment flow with pre-selected customer
+        ActionTile(
+            title = if (isArabic) StoreStrings.PAYMENT_AR else StoreStrings.PAYMENT_EN,
+            icon = Icons.Default.AccountBalanceWallet,
+            accentColor = StatusGreen,
+            testTag = "action_payment",
+            onClick = onPayment,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+/**
+ * Single Action Tile Component
+ */
+@Composable
+private fun ActionTile(
     title: String,
-    subtitle: String,
-    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accentColor: androidx.compose.ui.graphics.Color,
     testTag: String,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clickable { onClick() }
-            .testTag(testTag),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = modifier
+            .border(width = 1.dp, color = GeoOutlineVariant, shape = RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .testTag(testTag)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(vertical = 14.dp, horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+            Surface(
+                color = accentColor.copy(alpha = 0.10f),
+                shape = CircleShape,
+                modifier = Modifier.size(40.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(CircleShape)
-                        .background(iconContainerColor),
-                    contentAlignment = Alignment.Center
-                ) {
+                Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
+                        tint = accentColor,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(22.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
+}
+
+/**
+ * Activity Row Card for Customer Details
+ * Mirrors Home Screen's latest activities row format:
+ * customer name, activity type badge ("مشتريات" / "دفعة"), notes, amount, and relative time.
+ */
+@Composable
+private fun CustomerActivityRowCard(
+    transaction: TransactionItem,
+    currency: String,
+    isArabic: Boolean
+) {
+    val isCredit = transaction.isCredit
+    val isPayment = transaction.activityType == "دفعة" || transaction.activityType == "Payment"
+
+    val (badgeBg, badgeTint, iconVector) = if (isPayment || isCredit) {
+        Triple(StatusGreenBg, StatusGreen, Icons.Default.Add)
+    } else {
+        Triple(StatusRedBg, StatusRed, Icons.Default.Remove)
+    }
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, GeoOutlineVariant, RoundedCornerShape(14.dp))
+            .testTag("customer_activity_row_${transaction.id}")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon Pill
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(badgeBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = iconVector,
+                    contentDescription = null,
+                    tint = badgeTint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Customer Name & Activity Type + Notes
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = transaction.title.ifBlank { transaction.activityType },
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = transaction.activityType,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    if (transaction.notes.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = transaction.notes,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            // Amount and relative time
+            Column(horizontalAlignment = Alignment.End) {
+                val prefix = if (isPayment || isCredit) "+" else "-"
+                val amountColor = if (isPayment || isCredit) StatusGreen else StatusRed
+                Text(
+                    text = String.format(Locale.US, "%s%,.2f %s", prefix, transaction.amount, currency),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    ),
+                    color = amountColor
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = transaction.relativeTime,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Edit Customer Dialog
+ */
+@Composable
+private fun EditCustomerDialog(
+    customer: CustomerAccount,
+    isArabic: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (newName: String, newPhone: String) -> Unit
+) {
+    var name by remember { mutableStateOf(customer.customerName) }
+    var phone by remember { mutableStateOf(customer.phone) }
+    var nameError by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (isArabic) StoreStrings.EDIT_CUSTOMER_AR else StoreStrings.EDIT_CUSTOMER_EN,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        if (it.isNotBlank()) nameError = false
+                    },
+                    label = { Text(if (isArabic) "اسم العميل" else "Customer Name") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(20.dp))
+                    },
+                    isError = nameError,
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit_customer_name_field")
+                )
+
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it },
+                    label = { Text(if (isArabic) "رقم الهاتف" else "Phone Number") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(20.dp))
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edit_customer_phone_field")
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isBlank()) {
+                        nameError = true
+                    } else {
+                        onSave(name.trim(), phone.trim())
+                    }
+                },
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
+                modifier = Modifier.testTag("confirm_edit_customer_button")
+            ) {
+                Text(text = if (isArabic) "حفظ التعديلات" else "Save Changes", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.testTag("cancel_edit_customer_button")
+            ) {
+                Text(text = if (isArabic) "إلغاء" else "Cancel")
+            }
+        },
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
+}
+
+/**
+ * Archive Customer Confirmation Dialog
+ * Note: Permanent delete does not exist on this screen. Archiving is the only destructive-style action.
+ */
+@Composable
+private fun ArchiveCustomerDialog(
+    customerName: String,
+    isArabic: Boolean,
+    onDismiss: () -> Unit,
+    onConfirmArchive: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (isArabic) StoreStrings.ARCHIVE_CUSTOMER_AR else StoreStrings.ARCHIVE_CUSTOMER_EN,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = MaterialTheme.colorScheme.error
+            )
+        },
+        text = {
+            Text(
+                text = if (isArabic) {
+                    "هل أنت متأكد من أرشفة العميل \"$customerName\"؟ سيتم نقل الحساب إلى الأرشيف."
+                } else {
+                    "Are you sure you want to archive customer \"$customerName\"? The account will be moved to archives."
+                },
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmArchive,
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.testTag("confirm_archive_customer_button")
+            ) {
+                Text(
+                    text = if (isArabic) "أرشفة" else "Archive",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.testTag("cancel_archive_customer_button")
+            ) {
+                Text(text = if (isArabic) "إلغاء" else "Cancel")
+            }
+        },
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }

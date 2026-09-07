@@ -2,41 +2,41 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Default backward-compatible references
-val BrandPrimary = Color(0xFF5B1E5C)
-val BrandSecondary = Color(0xFF4A154B)
-val BrandTertiary = Color(0xFF8A2E8B)
+// Geometric Balance Design Theme
+val GeoPrimary = Color(0xFF6750A4)
+val GeoOnPrimary = Color(0xFFFFFFFF)
+val GeoPrimaryContainer = Color(0xFFEADDFF)
+val GeoOnPrimaryContainer = Color(0xFF21005D)
 
-val BrandPrimaryLight = Color(0xFF5B1E5C)
-val BrandOnPrimaryLight = Color(0xFFFFFFFF)
-val BrandPrimaryContainerLight = Color(0xFFF7EBF7)
-val BrandOnPrimaryContainerLight = Color(0xFF3B0F3C)
+val GeoBackground = Color(0xFFF7F9FC)
+val GeoOnBackground = Color(0xFF1A1C1E)
+val GeoSurface = Color(0xFFFFFFFF)
+val GeoOnSurface = Color(0xFF1A1C1E)
+val GeoSurfaceVariant = Color(0xFFF0F2F5)
+val GeoOnSurfaceVariant = Color(0xFF73777F)
+val GeoOutline = Color(0xFFE5E7EB)
+val GeoOutlineVariant = Color(0xFFF0F2F5)
 
-val BrandBackgroundLight = Color(0xFFF9F7FA)
-val BrandSurfaceLight = Color(0xFFFFFFFF)
-val BrandSurfaceVariantLight = Color(0xFFF2EDF3)
-val BrandOutlineLight = Color(0xFFD4C8D5)
+// Bottom Navigation Active/Inactive Tokens (Geometric Balance)
+val GeoNavActivePill = Color(0xFFD3E4FF)
+val GeoNavActiveText = Color(0xFF001C38)
+val GeoNavInactive = Color(0xFF73777F)
 
-// Status and Financial colors
-val FinancialDebt = Color(0xFFC62828)
-val FinancialDebtContainer = Color(0xFFFFEBEE)
-val FinancialPayment = Color(0xFF2E7D32)
-val FinancialPaymentContainer = Color(0xFFE8F5E9)
-val FinancialCash = Color(0xFF0277BD)
-val FinancialCashContainer = Color(0xFFE1F5FE)
-val FinancialCancelled = Color(0xFF757575)
-val FinancialCancelledContainer = Color(0xFFEEEEEE)
+// Optional Themes retained for compatibility
+val PurpleAccentPrimary = Color(0xFF6750A4)
+val PurpleAccentBackground = Color(0xFFF7F9FC)
+val PurpleAccentSurface = Color(0xFFFFFFFF)
+val PurpleAccentOutline = Color(0xFFE5E7EB)
 
-// Dark Theme colors
-val BrandPrimaryDark = Color(0xFFCE93D8)
-val BrandOnPrimaryDark = Color(0xFF38003D)
-val BrandPrimaryContainerDark = Color(0xFF5B1E5C)
-val BrandOnPrimaryContainerDark = Color(0xFFF7EBF7)
-val BrandBackgroundDark = Color(0xFF140E14)
-val BrandSurfaceDark = Color(0xFF1F1721)
-val BrandSurfaceVariantDark = Color(0xFF2D2230)
-val BrandOutlineDark = Color(0xFF4D3B50)
-val BrandOnSurfaceDark = Color(0xFFEDE0EC)
-val BrandOnSurfaceVariantDark = Color(0xFFAEA2B0)
+val GoldAccentPrimary = Color(0xFF946E0A)
+val GoldAccentBackground = Color(0xFFFAF9F5)
+val GoldAccentSurface = Color(0xFFFFFFFF)
+val GoldAccentOutline = Color(0xFFEDE8DC)
 
-
+// Status colors (subtle, rounded badges matching Geometric Balance)
+val StatusGreen = Color(0xFF16A34A)
+val StatusGreenBg = Color(0xFFF0FDF4)
+val StatusRed = Color(0xFFDC2626)
+val StatusRedBg = Color(0xFFFEF2F2)
+val StatusBlue = Color(0xFF2563EB)
+val StatusBlueBg = Color(0xFFEFF6FF)
