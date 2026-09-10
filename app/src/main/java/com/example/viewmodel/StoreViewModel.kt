@@ -13,7 +13,7 @@ import com.example.model.ProductItem
 import com.example.model.SettlementType
 import com.example.model.StoreStrings
 import com.example.model.TransactionItem
-import com.example.ui.theme.AppThemeMode
+import com.example.model.AppThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
