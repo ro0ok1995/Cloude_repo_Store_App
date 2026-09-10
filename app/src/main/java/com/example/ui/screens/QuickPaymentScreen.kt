@@ -1,10 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,13 +24,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,7 +41,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -65,10 +59,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,48 +75,10 @@ import com.example.ui.theme.GeoOutline
 import com.example.ui.theme.GeoOutlineVariant
 import com.example.ui.theme.GeoPrimary
 import com.example.ui.theme.StatusGreen
-import com.example.ui.theme.StatusGreenBg
 import com.example.ui.theme.StatusRed
 import com.example.ui.theme.StatusRedBg
-import kotlinx.coroutines.launch
 import java.util.Locale
 
-/**
- * Quick Payment Screen of SmallStore
- *
- * SPECIFICATION RULES:
- * - ENTRY: Reached via "+ -> Quick Payment".
- *
- * STEP 1 - CUSTOMER SELECTION:
- * - Top of screen: a required "Select Customer" search/picker field.
- * - Shows it already displaying a selected customer's name with a small "change" link,
- *   since customer selection happens first in this flow.
- *
- * STEP 2 - SETTLEMENT TYPE:
- * - A clear two-option toggle/segmented control: "Full" (كامل) and "Partial" (جزئي).
- *   Only one can be active at a time.
- *
- * FULL MODE (default selected state for this render):
- * - Below the toggle, choice between "Cash" (نقداً) and "Debt" (آجل) chips/cards.
- * - Only the input field for the selected method (Cash or Debt) is active/editable;
- *   the other is hidden or disabled/greyed out - do not show both active in Full mode.
- *
- * PARTIAL MODE (alternate state supported by the layout):
- * - Both "Cash amount" field and "Debt amount" field are shown and editable simultaneously.
- *
- * NOTES:
- * - Optional multi-line "Notes" field near bottom, clearly labeled "(optional)".
- *
- * VALIDATION RULE:
- * - Amounts entered can never exceed transaction total (helper/error text below amount field).
- *
- * BOTTOM ACTION:
- * - Single primary button "Complete" (إتمام) anchored at bottom, opening Unified Settlement summary.
- *
- * CONSTRAINTS:
- * - Only Cash and Debt payment methods. No receipt-printing option.
- * - Rendered in Full mode with plausible Arabic sample data.
- */
 @Composable
 fun QuickPaymentScreen(
     customer: CustomerAccount?,
@@ -146,12 +102,11 @@ fun QuickPaymentScreen(
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
     val currency = if (isArabic) "ر.س" else "SAR"
+    val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
     var showCustomerPicker by remember { mutableStateOf(false) }
     var showSettlementDialog by remember { mutableStateOf(false) }
 
-    // Amount Calculations & Validation
     val parsedCash = cashAmount.toDoubleOrNull() ?: 0.0
     val parsedDebt = debtAmount.toDoubleOrNull() ?: 0.0
     val currentEnteredTotal = when (settlementType) {
@@ -181,7 +136,10 @@ fun QuickPaymentScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = onBackClick,
+                        onClick = {
+                            focusManager.clearFocus()
+                            onBackClick()
+                        },
                         modifier = Modifier.testTag("quick_payment_back_button")
                     ) {
                         Icon(
@@ -190,9 +148,7 @@ fun QuickPaymentScreen(
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
-
                     Spacer(modifier = Modifier.width(4.dp))
-
                     Text(
                         text = if (isArabic) StoreStrings.QUICK_PAYMENT_AR else StoreStrings.QUICK_PAYMENT_EN,
                         style = MaterialTheme.typography.titleLarge.copy(
@@ -206,7 +162,6 @@ fun QuickPaymentScreen(
             }
         },
         bottomBar = {
-            // Sticky Bottom Primary Action: "Complete"
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 8.dp,
@@ -222,6 +177,7 @@ fun QuickPaymentScreen(
                     Button(
                         onClick = {
                             if (isValid) {
+                                focusManager.clearFocus()
                                 showSettlementDialog = true
                                 onComplete()
                             }
@@ -262,10 +218,7 @@ fun QuickPaymentScreen(
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(modifier = Modifier.height(14.dp))
-
-            // ==========================================
-            // STEP 1 — CUSTOMER SELECTION
-            // ==========================================
+            // STEP 1 - CUSTOMER SELECTION
             Text(
                 text = if (isArabic) "الخطوة 1: تحديد العميل *" else "Step 1: Customer Selection *",
                 style = MaterialTheme.typography.labelLarge.copy(
@@ -275,7 +228,6 @@ fun QuickPaymentScreen(
                 modifier = Modifier.padding(bottom = 6.dp)
             )
 
-            // Required Customer Card: Pre-filled with selected customer and small "change" link
             Card(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -311,9 +263,7 @@ fun QuickPaymentScreen(
                                 )
                             )
                         }
-
                         Spacer(modifier = Modifier.width(12.dp))
-
                         Column {
                             Text(
                                 text = customer?.customerName ?: (if (isArabic) "خالد بن عبدالعزيز" else "Khalid Bin Abdulaziz"),
@@ -330,10 +280,11 @@ fun QuickPaymentScreen(
                             )
                         }
                     }
-
-                    // Small "change" link
                     TextButton(
-                        onClick = { showCustomerPicker = true },
+                        onClick = {
+                            focusManager.clearFocus()
+                            showCustomerPicker = true
+                        },
                         modifier = Modifier.testTag("quick_payment_change_customer_button")
                     ) {
                         Text(
@@ -376,7 +327,6 @@ fun QuickPaymentScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-
                     Text(
                         text = String.format(Locale.US, "%.2f %s", transactionTotal, currency),
                         style = MaterialTheme.typography.titleMedium.copy(
@@ -391,11 +341,9 @@ fun QuickPaymentScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // ==========================================
-            // STEP 2 — SETTLEMENT TYPE
-            // ==========================================
+            // STEP 2 - SETTLEMENT TYPE
             Text(
-                text = if (isArabic) "الخطوة 2: نوع التسوية" else "Step 2: Settlement Type",
+                text = if (isArabic) "الخطوة 2: نوع المحاسبة" else "Step 2: Settlement Type",
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = FontWeight.Bold,
                     color = GeoPrimary
@@ -403,7 +351,6 @@ fun QuickPaymentScreen(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            // Two-option toggle/segmented control: "Full" and "Partial"
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -415,7 +362,6 @@ fun QuickPaymentScreen(
                 val fullSelected = settlementType == SettlementType.FULL
                 val partialSelected = settlementType == SettlementType.PARTIAL
 
-                // "Full" Option (default)
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -438,7 +384,6 @@ fun QuickPaymentScreen(
                     )
                 }
 
-                // "Partial" Option
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -464,11 +409,7 @@ fun QuickPaymentScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Mode Rendering: FULL MODE vs PARTIAL MODE
             if (settlementType == SettlementType.FULL) {
-                // ==========================================
-                // FULL MODE (Default Selected State)
-                // ==========================================
                 Text(
                     text = if (isArabic) "طريقة السداد بالكامل:" else "Full Payment Method:",
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
@@ -476,7 +417,6 @@ fun QuickPaymentScreen(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                // Selectable Chips/Radio Cards: Cash vs Debt
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -484,7 +424,6 @@ fun QuickPaymentScreen(
                     val isCash = paymentMethod == PaymentMethodOption.CASH
                     val isDebt = paymentMethod == PaymentMethodOption.DEBT
 
-                    // Cash Chip Card
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
@@ -524,7 +463,6 @@ fun QuickPaymentScreen(
                         }
                     }
 
-                    // Debt Chip Card
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(
@@ -567,10 +505,9 @@ fun QuickPaymentScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // In Full mode: Only the input field for the selected method is active/editable!
                 if (paymentMethod == PaymentMethodOption.CASH) {
                     Text(
-                        text = if (isArabic) "المبلغ النقدي المسدد" else "Cash Amount",
+                        text = if (isArabic) "المبلغ نقداً (كاش)" else "Cash Amount",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 6.dp)
@@ -600,7 +537,7 @@ fun QuickPaymentScreen(
                     )
                 } else {
                     Text(
-                        text = if (isArabic) "المبلغ الآجل المسجل" else "Debt Amount",
+                        text = if (isArabic) "المبلغ بالدين (آجل)" else "Debt Amount",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 6.dp)
@@ -630,12 +567,8 @@ fun QuickPaymentScreen(
                     )
                 }
             } else {
-                // ==========================================
-                // PARTIAL MODE (Alternate state supported by layout)
-                // Both Cash amount and Debt amount are shown & editable simultaneously
-                // ==========================================
                 Text(
-                    text = if (isArabic) "المبلغ النقدي:" else "Cash Amount:",
+                    text = if (isArabic) "المبلغ نقداً (كاش):" else "Cash Amount:",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 6.dp)
@@ -663,7 +596,7 @@ fun QuickPaymentScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = if (isArabic) "المبلغ الآجل:" else "Debt Amount:",
+                    text = if (isArabic) "المبلغ بالدين (آجل):" else "Debt Amount:",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 6.dp)
@@ -689,11 +622,8 @@ fun QuickPaymentScreen(
                 )
             }
 
-            // ==========================================
-            // VALIDATION RULE HELPER / ERROR TEXT
-            // Amounts entered can never exceed the transaction total
-            // ==========================================
             Spacer(modifier = Modifier.height(6.dp))
+
             if (isExceeded) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -748,21 +678,20 @@ fun QuickPaymentScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // ==========================================
-            // NOTES FIELD (Multi-line, clearly labeled "(optional)")
-            // ==========================================
+            // NOTES FIELD
             Text(
                 text = if (isArabic) StoreStrings.NOTES_LABEL_AR else StoreStrings.NOTES_LABEL_EN,
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 6.dp)
             )
+
             OutlinedTextField(
                 value = notes,
                 onValueChange = onNotesChange,
                 placeholder = {
                     Text(
-                        text = if (isArabic) "اكتب أي تفاصيل إضافية عن الدفعة..." else "Enter any payment notes...",
+                        text = if (isArabic) "أدخل أي ملاحظات للسداد..." else "Enter any payment notes...",
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                 },
@@ -782,24 +711,29 @@ fun QuickPaymentScreen(
         }
     }
 
-    // Customer Picker Dialog
     if (showCustomerPicker) {
         CustomerSelectionDialog(
             customers = allCustomers,
             selectedCustomerId = customer?.id,
             isArabic = isArabic,
-            onDismiss = { showCustomerPicker = false },
+            onDismiss = {
+                focusManager.clearFocus()
+                showCustomerPicker = false
+            },
             onSelectCustomer = {
+                focusManager.clearFocus()
                 onCustomerChange(it)
                 showCustomerPicker = false
             }
         )
     }
 
-    // Unified Settlement Summary Confirmation Dialog
     if (showSettlementDialog) {
         AlertDialog(
-            onDismissRequest = { showSettlementDialog = false },
+            onDismissRequest = {
+                focusManager.clearFocus()
+                showSettlementDialog = false
+            },
             icon = {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
@@ -810,14 +744,14 @@ fun QuickPaymentScreen(
             },
             title = {
                 Text(
-                    text = if (isArabic) "ملخص التسوية الموحدة" else "Unified Settlement Summary",
+                    text = if (isArabic) "ملخص المحاسبة الموحد" else "Unified Settlement Summary",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                 )
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = if (isArabic) "تم تأكيد عملية الدفع السريع بنجاح وفق التفاصيل التالية:" else "Quick payment confirmed successfully with the following details:",
+                        text = if (isArabic) "تم تأكيد السداد السريع بالبيانات التالية:" else "Quick payment confirmed successfully with the following details:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -827,7 +761,7 @@ fun QuickPaymentScreen(
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                     )
                     Text(
-                        text = if (isArabic) "نوع التسوية: ${if (settlementType == SettlementType.FULL) "كامل" else "جزئي"}" else "Settlement Type: ${settlementType.name}",
+                        text = if (isArabic) "نوع المحاسبة: ${if (settlementType == SettlementType.FULL) "كامل" else "جزئي"}" else "Settlement Type: ${settlementType.name}",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
@@ -838,7 +772,10 @@ fun QuickPaymentScreen(
             },
             confirmButton = {
                 Button(
-                    onClick = { showSettlementDialog = false },
+                    onClick = {
+                        focusManager.clearFocus()
+                        showSettlementDialog = false
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary)
                 ) {
                     Text(text = if (isArabic) "حسناً" else "OK")
@@ -850,9 +787,6 @@ fun QuickPaymentScreen(
     }
 }
 
-/**
- * Customer Selection Dialog for Quick Payment
- */
 @Composable
 private fun CustomerSelectionDialog(
     customers: List<CustomerAccount>,
@@ -861,6 +795,15 @@ private fun CustomerSelectionDialog(
     onDismiss: () -> Unit,
     onSelectCustomer: (CustomerAccount) -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredCustomers = remember(customers, searchQuery) {
+        if (searchQuery.isBlank()) customers
+        else {
+            val q = searchQuery.trim().lowercase()
+            customers.filter { it.customerName.lowercase().contains(q) || it.phone.contains(q) }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -871,59 +814,113 @@ private fun CustomerSelectionDialog(
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = if (isArabic) "اختر عميلاً لتطبيق الدفع السريع:" else "Select customer for quick payment:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 280.dp)
-                ) {
-                    items(customers, key = { it.id }) { cust ->
-                        val isSelected = cust.id == selectedCustomerId
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (isSelected) GeoPrimary.copy(alpha = 0.12f)
-                                    else Color.Transparent
-                                )
-                                .clickable { onSelectCustomer(cust) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = cust.customerName,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = cust.phone,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            if (isSelected) {
+                // Search field inside dialog
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = {
+                        Text(
+                            text = if (isArabic) StoreStrings.SEARCH_CUSTOMER_AR else StoreStrings.SEARCH_CUSTOMER_EN,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(32.dp)) {
                                 Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = "Selected",
-                                    tint = GeoPrimary,
-                                    modifier = Modifier.size(20.dp)
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
-                        HorizontalDivider(
-                            color = GeoOutlineVariant.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(horizontal = 8.dp)
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = GeoPrimary,
+                        unfocusedBorderColor = GeoOutline
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("dialog_customer_search_input")
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (filteredCustomers.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = if (isArabic) "لا يوجد عملاء مطابقون" else "No matching customers found",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp)
+                    ) {
+                        items(filteredCustomers, key = { it.id }) { cust ->
+                            val isSelected = cust.id == selectedCustomerId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (isSelected) GeoPrimary.copy(alpha = 0.12f)
+                                        else Color.Transparent
+                                    )
+                                    .clickable { onSelectCustomer(cust) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = cust.customerName,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = cust.phone,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = GeoPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            HorizontalDivider(
+                                color = GeoOutlineVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                        }
                     }
                 }
             }

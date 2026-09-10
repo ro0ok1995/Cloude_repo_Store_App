@@ -63,7 +63,6 @@ fun GlobalBottomBar(
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
-
     Surface(
         color = MaterialTheme.colorScheme.surface,
         modifier = modifier

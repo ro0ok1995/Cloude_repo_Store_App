@@ -2,14 +2,57 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.ui.SmallStoreApp
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.model.AppThemeMode
+import com.example.model.LanguageMode
+import com.example.model.NavDestination
+import com.example.model.StoreInfo
+import com.example.model.StoreStrings
+import com.example.model.ThemeDisplayMode
+import com.example.ui.components.GlobalBottomBar
+import com.example.ui.components.GlobalDrawerContent
+import com.example.ui.components.GlobalTopBar
+import com.example.ui.components.PlusActionSheet
+import com.example.ui.components.UnifiedSettlementSheet
+import com.example.ui.screens.AboutAppScreen
+import com.example.ui.screens.AccountsScreen
+import com.example.ui.screens.AnalysisCenterScreen
+import com.example.ui.screens.AppSettingsScreen
+import com.example.ui.screens.DataCenterScreen
+import com.example.ui.screens.GenericContentScreen
+import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.MoreScreen
+import com.example.ui.screens.NotificationsScreen
+import com.example.ui.screens.PurchasesScreen
+import com.example.ui.screens.QuickPaymentScreen
+import com.example.ui.screens.StoreInformationScreen
 import com.example.ui.theme.SmallStoreTheme
+import com.example.viewmodel.AnalysisCenterViewModel
+import com.example.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,14 +65,427 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(text = "SmallStore $name", modifier = modifier)
-}
+fun SmallStoreApp(
+    mainViewModel: MainViewModel = viewModel(),
+    analysisViewModel: AnalysisCenterViewModel = viewModel()
+) {
+    val uiState by mainViewModel.uiState.collectAsState()
+    val isArabic = uiState.languageMode == LanguageMode.ARABIC
+    val layoutDirection = if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
 
-@Preview(showBackground = true)
-@Composable
-fun SmallStorePreview() {
-    SmallStoreTheme {
-        SmallStoreApp()
+    // Sync drawer state with ViewModel
+    LaunchedEffect(uiState.isDrawerOpen) {
+        if (uiState.isDrawerOpen) {
+            drawerState.open()
+        } else {
+            drawerState.close()
+        }
+    }
+
+    // Handle Android system back press
+    BackHandler(enabled = drawerState.isOpen || uiState.currentDestination != NavDestination.HOME) {
+        focusManager.clearFocus()
+        if (drawerState.isOpen) {
+            coroutineScope.launch { drawerState.close() }
+            mainViewModel.closeDrawer()
+        } else if (uiState.currentDestination != NavDestination.HOME) {
+            mainViewModel.navigateTo(NavDestination.HOME)
+        }
+    }
+
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        SmallStoreTheme(
+            themeMode = uiState.themeMode,
+            displayMode = uiState.displayMode
+        ) {
+            val unreadNotifications = uiState.notifications.count { !it.isRead }
+
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    GlobalDrawerContent(
+                        currentDestination = uiState.currentDestination,
+                        languageMode = uiState.languageMode,
+                        unreadNotificationsCount = unreadNotifications,
+                        storeName = uiState.storeInfo.storeName,
+                        storeOwnerName = uiState.storeInfo.ownerName,
+                        onSelectDestination = { dest ->
+                            focusManager.clearFocus()
+                            mainViewModel.navigateTo(dest)
+                            coroutineScope.launch { drawerState.close() }
+                            mainViewModel.closeDrawer()
+                        },
+                        onToggleLanguage = { mode ->
+                            focusManager.clearFocus()
+                            mainViewModel.setLanguageMode(mode)
+                        }
+                    )
+                },
+                modifier = Modifier.testTag("app_navigation_drawer")
+            ) {
+                val isTopLevelScreen = when (uiState.currentDestination) {
+                    NavDestination.HOME,
+                    NavDestination.ACCOUNTS,
+                    NavDestination.ANALYSIS_CENTER,
+                    NavDestination.MORE,
+                    NavDestination.MORE_SETTINGS -> true
+                    else -> false
+                }
+
+                val storeOwnerName = uiState.storeInfo.ownerName.ifBlank { uiState.storeInfo.storeName }
+                val screenTitle = when (uiState.currentDestination) {
+                    NavDestination.HOME -> if (isArabic) "مرحباً بك، $storeOwnerName" else "Welcome, $storeOwnerName"
+                    NavDestination.ACCOUNTS, NavDestination.CUSTOMER_DETAILS -> if (isArabic) StoreStrings.ACCOUNTS_AR else StoreStrings.ACCOUNTS_EN
+                    NavDestination.ANALYSIS_CENTER -> if (isArabic) StoreStrings.ANALYSIS_CENTER_AR else StoreStrings.ANALYSIS_CENTER_EN
+                    NavDestination.MORE, NavDestination.MORE_SETTINGS -> if (isArabic) StoreStrings.MORE_AR else StoreStrings.MORE_EN
+                    NavDestination.PURCHASES -> if (isArabic) StoreStrings.PURCHASES_AR else StoreStrings.PURCHASES_EN
+                    NavDestination.QUICK_PAYMENT -> if (isArabic) StoreStrings.QUICK_PAYMENT_AR else StoreStrings.QUICK_PAYMENT_EN
+                    NavDestination.NOTIFICATIONS -> if (isArabic) StoreStrings.NOTIFICATIONS_AR else StoreStrings.NOTIFICATIONS_EN
+                    NavDestination.STORE_INFORMATION -> if (isArabic) StoreStrings.STORE_INFORMATION_AR else StoreStrings.STORE_INFORMATION_EN
+                    NavDestination.APP_SETTINGS -> if (isArabic) StoreStrings.APP_SETTINGS_AR else StoreStrings.APP_SETTINGS_EN
+                    NavDestination.DATA_CENTER -> if (isArabic) StoreStrings.DATA_CENTER_AR else StoreStrings.DATA_CENTER_EN
+                    NavDestination.ABOUT -> if (isArabic) StoreStrings.ABOUT_SMALLSTORE_AR else StoreStrings.ABOUT_SMALLSTORE_EN
+                    NavDestination.PRIVACY_POLICY -> if (isArabic) StoreStrings.PRIVACY_POLICY_AR else StoreStrings.PRIVACY_POLICY_EN
+                    NavDestination.TERMS_OF_USE -> if (isArabic) StoreStrings.TERMS_OF_USE_AR else StoreStrings.TERMS_OF_USE_EN
+                    NavDestination.CONTACT_SUPPORT -> if (isArabic) StoreStrings.CONTACT_SUPPORT_AR else StoreStrings.CONTACT_SUPPORT_EN
+                }
+
+                val unreadNotifications = uiState.notifications.count { !it.isRead }
+
+                Scaffold(
+                    topBar = {
+                        if (isTopLevelScreen) {
+                            GlobalTopBar(
+                                title = screenTitle,
+                                unreadNotificationsCount = unreadNotifications,
+                                onDrawerClick = {
+                                    focusManager.clearFocus()
+                                    mainViewModel.openDrawer()
+                                    coroutineScope.launch { drawerState.open() }
+                                },
+                                onNotificationsClick = {
+                                    focusManager.clearFocus()
+                                    mainViewModel.navigateTo(NavDestination.NOTIFICATIONS)
+                                }
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        if (isTopLevelScreen) {
+                            GlobalBottomBar(
+                                currentDestination = uiState.activeBottomNav,
+                                languageMode = uiState.languageMode,
+                                onNavigate = { dest ->
+                                    focusManager.clearFocus()
+                                    mainViewModel.navigateTo(dest)
+                                },
+                                onPlusClick = {
+                                    focusManager.clearFocus()
+                                    mainViewModel.openActionSheet()
+                                }
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("main_scaffold")
+                ) { innerPadding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        when (uiState.currentDestination) {
+                            NavDestination.HOME -> {
+                                val matching = if (uiState.homeSearchQuery.isBlank()) {
+                                    uiState.customers
+                                } else {
+                                    val q = uiState.homeSearchQuery.trim().lowercase()
+                                    uiState.customers.filter {
+                                        it.customerName.lowercase().contains(q) || it.phone.contains(q)
+                                    }
+                                }
+
+                                val displayedTxs = remember(uiState.transactions, uiState.homeSelectedCustomer) {
+                                    if (uiState.homeSelectedCustomer != null) {
+                                        uiState.transactions.filter { it.customerName.equals(uiState.homeSelectedCustomer?.customerName, ignoreCase = true) }
+                                    } else {
+                                        uiState.transactions
+                                    }
+                                }
+
+                                val totalDebt = uiState.customers.sumOf { it.balance }
+                                val totalBalance = uiState.customers.sumOf { it.totalDebt }
+
+                                HomeScreen(
+                                    totalBalance = totalBalance,
+                                    totalDebt = totalDebt,
+                                    transactionsCount = displayedTxs.size,
+                                    transactions = displayedTxs,
+                                    matchingCustomers = matching,
+                                    allCustomers = uiState.customers,
+                                    selectedCustomer = uiState.homeSelectedCustomer,
+                                    searchQuery = uiState.homeSearchQuery,
+                                    selectedPeriod = uiState.homeSelectedPeriod,
+                                    languageMode = uiState.languageMode,
+                                    onSearchQueryChange = { mainViewModel.setHomeSearchQuery(it) },
+                                    onSelectCustomer = { mainViewModel.selectHomeCustomer(it) },
+                                    onClearSelectedCustomer = { mainViewModel.clearHomeSelectedCustomer() },
+                                    onSelectPeriod = { mainViewModel.setHomePeriod(it) }
+                                )
+                            }
+
+                            NavDestination.ACCOUNTS,
+                            NavDestination.CUSTOMER_DETAILS -> {
+                                val filteredAccounts = remember(uiState.customers, uiState.accountsSearchQuery, uiState.accountsFilter) {
+                                    var list = uiState.customers
+                                    if (uiState.accountsSearchQuery.isNotBlank()) {
+                                        val q = uiState.accountsSearchQuery.trim().lowercase()
+                                        list = list.filter { it.customerName.lowercase().contains(q) || it.phone.contains(q) }
+                                    }
+                                    when (uiState.accountsFilter) {
+                                        com.example.model.AccountFilter.ALL -> list
+                                        com.example.model.AccountFilter.HAS_DEBT -> list.filter { it.balance > 0 }
+                                        com.example.model.AccountFilter.RECENTLY_ACTIVE -> list.filter { it.hasRecentActivity }
+                                    }
+                                }
+
+                                AccountsScreen(
+                                    accounts = filteredAccounts,
+                                    allCustomers = uiState.customers,
+                                    transactions = uiState.transactions,
+                                    searchQuery = uiState.accountsSearchQuery,
+                                    filter = uiState.accountsFilter,
+                                    selectedCustomerDetails = uiState.accountsSelectedCustomerDetails,
+                                    showAddCustomerDialog = uiState.showAddCustomerDialog,
+                                    languageMode = uiState.languageMode,
+                                    onSearchQueryChange = { mainViewModel.setAccountsSearchQuery(it) },
+                                    onFilterChange = { mainViewModel.setAccountsFilter(it) },
+                                    onCustomerClick = { mainViewModel.selectCustomerDetails(it) },
+                                    onCloseCustomerDetails = { mainViewModel.selectCustomerDetails(null) },
+                                    onOpenAddCustomerDialog = { mainViewModel.openAddCustomerDialog() },
+                                    onCloseAddCustomerDialog = { mainViewModel.closeAddCustomerDialog() },
+                                    onAddCustomer = { name, phone, debt -> mainViewModel.addCustomer(name, phone, debt) }
+                                )
+                            }
+
+                            NavDestination.ANALYSIS_CENTER -> {
+                                AnalysisCenterScreen(
+                                    viewModel = analysisViewModel,
+                                    customers = uiState.customers,
+                                    transactions = uiState.transactions,
+                                    storeInfo = uiState.storeInfo,
+                                    languageMode = uiState.languageMode
+                                )
+                            }
+
+                            NavDestination.MORE,
+                            NavDestination.MORE_SETTINGS -> {
+                                MoreScreen(
+                                    storeInfo = uiState.storeInfo,
+                                    languageMode = uiState.languageMode,
+                                    onNavigate = { dest ->
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(dest)
+                                    }
+                                )
+                            }
+
+                            NavDestination.PURCHASES -> {
+                                PurchasesScreen(
+                                    customer = uiState.purchasesCustomer,
+                                    allCustomers = uiState.customers,
+                                    products = uiState.products,
+                                    cart = uiState.cart,
+                                    searchQuery = uiState.purchasesSearchQuery,
+                                    isCartExpanded = uiState.isCartExpanded,
+                                    languageMode = uiState.languageMode,
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.HOME)
+                                    },
+                                    onSearchQueryChange = { mainViewModel.setPurchasesSearchQuery(it) },
+                                    onAddToCart = { mainViewModel.addToCart(it) },
+                                    onUpdateCartQuantity = { id, delta -> mainViewModel.updateCartQuantity(id, delta) },
+                                    onRemoveFromCart = { mainViewModel.removeFromCart(it) },
+                                    onToggleCartExpanded = { mainViewModel.toggleCartExpanded() },
+                                    onSelectCustomer = { mainViewModel.setPurchasesCustomer(it) },
+                                    onClearCustomer = { mainViewModel.setPurchasesCustomer(null) },
+                                    onCompleteTransaction = { mainViewModel.openPurchasesSettlement() }
+                                )
+                            }
+
+                            NavDestination.QUICK_PAYMENT -> {
+                                QuickPaymentScreen(
+                                    customer = uiState.quickPaymentCustomer,
+                                    allCustomers = uiState.customers,
+                                    transactionTotal = uiState.quickPaymentTotal,
+                                    settlementType = uiState.quickPaymentSettlementType,
+                                    paymentMethod = uiState.quickPaymentMethod,
+                                    cashAmount = uiState.quickPaymentCashAmount,
+                                    debtAmount = uiState.quickPaymentDebtAmount,
+                                    notes = uiState.quickPaymentNotes,
+                                    languageMode = uiState.languageMode,
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.HOME)
+                                    },
+                                    onCustomerChange = { mainViewModel.setQuickPaymentCustomer(it) },
+                                    onSettlementTypeChange = { mainViewModel.setQuickPaymentSettlementType(it) },
+                                    onPaymentMethodChange = { mainViewModel.setQuickPaymentMethod(it) },
+                                    onCashAmountChange = { mainViewModel.setQuickPaymentCashAmount(it) },
+                                    onDebtAmountChange = { mainViewModel.setQuickPaymentDebtAmount(it) },
+                                    onNotesChange = { mainViewModel.setQuickPaymentNotes(it) },
+                                    onComplete = { mainViewModel.completeQuickPayment() }
+                                )
+                            }
+
+                            NavDestination.NOTIFICATIONS -> {
+                                NotificationsScreen(
+                                    notifications = uiState.notifications,
+                                    languageMode = uiState.languageMode,
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.HOME)
+                                    },
+                                    onNotificationClick = { /* Handle click */ },
+                                    onViewNotifications = { mainViewModel.markNotificationsAsRead() }
+                                )
+                            }
+
+                            NavDestination.STORE_INFORMATION -> {
+                                StoreInformationScreen(
+                                    storeInfo = uiState.storeInfo,
+                                    languageMode = uiState.languageMode,
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                    },
+                                    onSaveStoreInfo = { mainViewModel.saveStoreInfo(it) }
+                                )
+                            }
+
+                            NavDestination.APP_SETTINGS -> {
+                                AppSettingsScreen(
+                                    languageMode = uiState.languageMode,
+                                    themeMode = uiState.themeMode,
+                                    displayMode = uiState.displayMode,
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                    },
+                                    onLanguageChange = { mainViewModel.setLanguageMode(it) },
+                                    onThemeChange = { mainViewModel.setThemeMode(it) },
+                                    onDisplayModeChange = { mainViewModel.setDisplayMode(it) }
+                                )
+                            }
+
+                            NavDestination.DATA_CENTER -> {
+                                DataCenterScreen(
+                                    languageMode = uiState.languageMode,
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                    },
+                                    onResetData = { mainViewModel.resetData() }
+                                )
+                            }
+
+                            NavDestination.ABOUT -> {
+                                AboutAppScreen(
+                                    languageMode = uiState.languageMode,
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                    }
+                                )
+                            }
+
+                            NavDestination.PRIVACY_POLICY -> {
+                                GenericContentScreen(
+                                    title = if (isArabic) StoreStrings.PRIVACY_POLICY_AR else StoreStrings.PRIVACY_POLICY_EN,
+                                    content = if (isArabic) {
+                                        "سياسة الخصوصية لسمول ستور:\nنحن نحترم خصوصيتك بالكامل. جميع بيانات المبيعات والحسابات والعملاء تُحفظ محلياً على جهازك ولا تتم مشاركتها مع أي أطراف ثالثة دون إذنك الصريح."
+                                    } else {
+                                        "SmallStore Privacy Policy:\nWe respect your data privacy. All customer accounts and transaction records are stored securely on your device."
+                                    },
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                    },
+                                    testTag = "screen_privacy"
+                                )
+                            }
+
+                            NavDestination.TERMS_OF_USE -> {
+                                GenericContentScreen(
+                                    title = if (isArabic) StoreStrings.TERMS_OF_USE_AR else StoreStrings.TERMS_OF_USE_EN,
+                                    content = if (isArabic) {
+                                        "شروط الاستخدام:\nباستخدامك لتطبيق سمول ستور، فإنك توافق على الالتزام بالقوانين المعمول بها لتنظيم المعاملات التجارية وتدقيق السجلات المحاسبية الخاصة بمتجرك."
+                                    } else {
+                                        "Terms of Use:\nBy using SmallStore, agree to comply with commercial accounting standards and verify data accuracy."
+                                    },
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                    },
+                                    testTag = "screen_terms"
+                                )
+                            }
+
+                            NavDestination.CONTACT_SUPPORT -> {
+                                AboutAppScreen(
+                                    languageMode = uiState.languageMode,
+                                    onBackClick = {
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Global Central "+" Action Sheet
+                PlusActionSheet(
+                    isOpen = uiState.showActionSheet,
+                    languageMode = uiState.languageMode,
+                    onDismiss = {
+                        focusManager.clearFocus()
+                        mainViewModel.closeActionSheet()
+                    },
+                    onRecordTransactionClick = {
+                        focusManager.clearFocus()
+                        mainViewModel.closeActionSheet()
+                        mainViewModel.navigateTo(NavDestination.PURCHASES)
+                    },
+                    onQuickPaymentClick = {
+                        focusManager.clearFocus()
+                        mainViewModel.closeActionSheet()
+                        mainViewModel.openQuickPayment()
+                    }
+                )
+
+                // Unified Settlement Sheet
+                UnifiedSettlementSheet(
+                    isOpen = uiState.showSettlementSheet,
+                    languageMode = uiState.languageMode,
+                    transactionTotal = uiState.settlementTotal,
+                    initialCashAmount = String.format(Locale.US, "%.0f", uiState.settlementTotal),
+                    initialDebtAmount = "0",
+                    onDismiss = {
+                        focusManager.clearFocus()
+                        mainViewModel.dismissSettlementSheet()
+                    },
+                    onComplete = { cash, debt, notes ->
+                        focusManager.clearFocus()
+                        mainViewModel.completeSettlement(cash, debt, notes)
+                    }
+                )
+            }
+        }
     }
 }

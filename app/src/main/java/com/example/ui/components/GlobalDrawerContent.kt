@@ -23,10 +23,9 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -38,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.LanguageMode
@@ -55,12 +55,13 @@ fun GlobalDrawerContent(
     currentDestination: NavDestination,
     languageMode: LanguageMode,
     unreadNotificationsCount: Int,
+    storeName: String = StoreStrings.APP_NAME,
+    storeOwnerName: String = "",
     onSelectDestination: (NavDestination) -> Unit,
     onToggleLanguage: (LanguageMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
-
     Surface(
         color = MaterialTheme.colorScheme.surface,
         modifier = modifier
@@ -97,22 +98,26 @@ fun GlobalDrawerContent(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = StoreStrings.APP_NAME,
+                        text = if (storeName.isNotBlank()) storeName else StoreStrings.APP_NAME,
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         ),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = if (isArabic) "إدارة المتاجر والحسابات" else "Shop & Balance Management",
+                        text = if (storeOwnerName.isNotBlank()) storeOwnerName else (if (isArabic) "إدارة المتجر والحسابات" else "Shop & Balance Management"),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            Divider(
+            HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant,
                 thickness = 1.dp,
                 modifier = Modifier.padding(vertical = 8.dp)
@@ -180,7 +185,7 @@ fun GlobalDrawerContent(
                 )
             }
 
-            Divider(
+            HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant,
                 thickness = 1.dp,
                 modifier = Modifier.padding(vertical = 8.dp)

@@ -73,8 +73,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,35 +98,6 @@ import com.example.ui.theme.StatusRedBg
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-/**
- * Purchases Screen of SmallStore
- *
- * SPECIFICATION CONTEXT:
- * - Entered via two flows:
- *   (A) via "+ -> Record Transaction -> Select Customer -> Purchases", customer is pre-selected.
- *   (B) via "Drawer -> Purchases" directly, where NO customer is pre-selected yet.
- * - This implementation renders Entry B (empty customer) by default, displaying a prominent,
- *   required "Select Customer" control at the top.
- *   When a customer is selected (Entry A or selected via picker), this same control displays
- *   the selected customer's identity with a "Change" option.
- *
- * TOP BAR:
- * - Title: "Purchases" ("المشتريات"), Back arrow.
- *
- * PRODUCT GRID:
- * - Search field: "Search products" ("البحث في المنتجات").
- * - Scrollable 2-column grid of product cards showing: placeholder image container, product name, price.
- * - Tapping a card adds it to cart and displays a small quantity badge.
- *
- * CART:
- * - Persistent cart summary bar anchored above the checkout button showing:
- *   number of items, running total price, and "View Cart" expand action listing line items with +/- and remove controls.
- *
- * CHECKOUT:
- * - Single primary button "Complete Transaction" ("إتمام المعاملة") at the bottom,
- *   disabled until both a customer is selected and the cart has at least 1 item.
- * - Tapping "Complete Transaction" opens the Unified Settlement dialog.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PurchasesScreen(
@@ -146,6 +121,7 @@ fun PurchasesScreen(
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
     val currency = if (isArabic) "ر.س" else "SAR"
+    val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     var showCustomerPicker by remember { mutableStateOf(false) }
@@ -171,7 +147,10 @@ fun PurchasesScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
-                        onClick = onBackClick,
+                        onClick = {
+                            focusManager.clearFocus()
+                            onBackClick()
+                        },
                         modifier = Modifier.testTag("purchases_back_button")
                     ) {
                         Icon(
@@ -180,9 +159,7 @@ fun PurchasesScreen(
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
-
                     Spacer(modifier = Modifier.width(4.dp))
-
                     Text(
                         text = if (isArabic) StoreStrings.PURCHASES_AR else StoreStrings.PURCHASES_EN,
                         style = MaterialTheme.typography.titleLarge.copy(
@@ -196,7 +173,6 @@ fun PurchasesScreen(
             }
         },
         bottomBar = {
-            // Persistent Bottom Section: Cart Summary & Checkout Button
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 8.dp,
@@ -210,7 +186,6 @@ fun PurchasesScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .animateContentSize()
                 ) {
-                    // Expanded Cart Details Drawer (shown when isCartExpanded == true)
                     AnimatedVisibility(
                         visible = isCartExpanded,
                         enter = fadeIn() + expandVertically(),
@@ -227,7 +202,7 @@ fun PurchasesScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (isArabic) "تفاصيل سلة المشتريات" else "Cart Line Items",
+                                    text = if (isArabic) "محتويات السلة" else "Cart Line Items",
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -242,15 +217,13 @@ fun PurchasesScreen(
                                     )
                                 }
                             }
-
                             HorizontalDivider(
                                 color = GeoOutlineVariant,
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
-
                             if (cart.isEmpty()) {
                                 Text(
-                                    text = if (isArabic) "السلة فارغة. انقر على أي منتج لإضافته." else "Cart is empty. Tap any product to add it.",
+                                    text = if (isArabic) "السلة فارغة. اضغط على أي منتج لإضافته." else "Cart is empty. Tap any product to add it.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(vertical = 12.dp)
@@ -307,9 +280,7 @@ fun PurchasesScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
-
                             Spacer(modifier = Modifier.width(10.dp))
-
                             Column {
                                 Text(
                                     text = if (totalCartItems == 0) {
@@ -331,7 +302,6 @@ fun PurchasesScreen(
                                 )
                             }
                         }
-
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
@@ -349,9 +319,7 @@ fun PurchasesScreen(
                                     modifier = Modifier.testTag("cart_total_price")
                                 )
                             }
-
                             Spacer(modifier = Modifier.width(4.dp))
-
                             Icon(
                                 imageVector = if (isCartExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
                                 contentDescription = if (isCartExpanded) "Collapse" else "Expand",
@@ -363,15 +331,15 @@ fun PurchasesScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Primary Checkout Button: "Complete Transaction"
-                    // Disabled/greyed out until BOTH a customer is selected and cart has at least 1 item
+                    // Primary Checkout Button
                     Button(
                         onClick = {
                             if (isCheckoutEnabled) {
+                                focusManager.clearFocus()
                                 onCompleteTransaction()
                                 coroutineScope.launch {
                                     snackbarHostState.showSnackbar(
-                                        message = if (isArabic) "تم فتح تسوية المعاملة للعميل ${customer?.customerName}" else "Opened transaction settlement for ${customer?.customerName}"
+                                        message = if (isArabic) "تم فتح المحاسبة للعميل ${customer?.customerName}" else "Opened transaction settlement for ${customer?.customerName}"
                                     )
                                 }
                             }
@@ -401,17 +369,16 @@ fun PurchasesScreen(
                         )
                     }
 
-                    // Helper indicator text if disabled
                     if (!isCheckoutEnabled) {
                         val requirementNote = when {
                             customer == null && cart.isEmpty() -> {
-                                if (isArabic) "يرجى تحديد العميل وإضافة منتجات للسلة لإتمام المعاملة" else "Select a customer and add items to checkout"
+                                if (isArabic) "اختر عميلاً وأضف منتجات لتتمكن من إتمام المعاملة" else "Select a customer and add items to checkout"
                             }
                             customer == null -> {
-                                if (isArabic) "يرجى تحديد العميل أعلاه للمتابعة" else "Please select a customer above to continue"
+                                if (isArabic) "يرجى اختيار عميل من الأعلى للمتابعة" else "Please select a customer above to continue"
                             }
                             else -> {
-                                if (isArabic) "يرجى إضافة منتج واحد على الأقل للسلة" else "Please add at least one product to the cart"
+                                if (isArabic) "يرجى إضافة منتج واحد على الأقل إلى السلة" else "Please add at least one product to the cart"
                             }
                         }
                         Text(
@@ -436,9 +403,7 @@ fun PurchasesScreen(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ==========================================
-            // 1. SELECT CUSTOMER CONTROL (Entry B Default)
-            // ==========================================
+            // 1. SELECT CUSTOMER CONTROL
             CustomerSelectorCard(
                 selectedCustomer = customer,
                 isArabic = isArabic,
@@ -449,9 +414,7 @@ fun PurchasesScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // ==========================================
             // 2. SEARCH PRODUCTS FIELD
-            // ==========================================
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchQueryChange,
@@ -470,7 +433,10 @@ fun PurchasesScreen(
                 },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSearchQueryChange("") }) {
+                        IconButton(onClick = {
+                            onSearchQueryChange("")
+                            focusManager.clearFocus()
+                        }) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = if (isArabic) "مسح" else "Clear",
@@ -480,6 +446,8 @@ fun PurchasesScreen(
                     }
                 },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = GeoPrimary,
@@ -494,9 +462,7 @@ fun PurchasesScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ==========================================
-            // 3. PRODUCT GRID (2 Columns)
-            // ==========================================
+            // 3. PRODUCT GRID
             val filteredProducts = if (searchQuery.isBlank()) {
                 products
             } else {
@@ -555,7 +521,6 @@ fun PurchasesScreen(
         }
     }
 
-    // Customer Selection Dialog / Sheet for interactive testing
     if (showCustomerPicker) {
         CustomerPickerDialog(
             customers = allCustomers,
@@ -570,9 +535,6 @@ fun PurchasesScreen(
     }
 }
 
-/**
- * Customer Selector Card (Visualizes Entry B empty state vs Entry A pre-selected state)
- */
 @Composable
 private fun CustomerSelectorCard(
     selectedCustomer: CustomerAccount?,
@@ -582,12 +544,9 @@ private fun CustomerSelectorCard(
     onClearClick: () -> Unit
 ) {
     if (selectedCustomer == null) {
-        // Entry B (empty): Required field/banner prompting user to select a customer
         Card(
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -627,9 +586,7 @@ private fun CustomerSelectorCard(
                                 modifier = Modifier.size(22.dp)
                             )
                         }
-
                         Spacer(modifier = Modifier.width(12.dp))
-
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -651,7 +608,6 @@ private fun CustomerSelectorCard(
                             )
                         }
                     }
-
                     OutlinedButton(
                         onClick = onSelectClick,
                         shape = RoundedCornerShape(10.dp),
@@ -659,35 +615,18 @@ private fun CustomerSelectorCard(
                         modifier = Modifier.testTag("choose_customer_button")
                     ) {
                         Text(
-                            text = if (isArabic) "اختيار عميل" else "Choose",
+                            text = if (isArabic) "اختيار" else "Choose",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = GeoPrimary
                         )
                     }
                 }
-
-                // Informational note reflecting entry context
-                Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = GeoOutlineVariant.copy(alpha = 0.5f))
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = if (isArabic) {
-                        "ملاحظة: عند الدخول المسبق مع عميل محدد (المدخل أ)، يظهر اسم العميل هنا مع خيار التغيير."
-                    } else {
-                        "Note: When entered with a pre-selected customer (Entry A), customer name appears here with a change option."
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                )
             }
         }
     } else {
-        // Entry A (or customer chosen): Displays selected customer name with change option
         Card(
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -720,9 +659,7 @@ private fun CustomerSelectorCard(
                             )
                         )
                     }
-
                     Spacer(modifier = Modifier.width(12.dp))
-
                     Column {
                         Text(
                             text = selectedCustomer.customerName,
@@ -736,24 +673,22 @@ private fun CustomerSelectorCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        // Balance pill
                         Spacer(modifier = Modifier.height(2.dp))
                         if (selectedCustomer.balance > 0) {
                             Text(
-                                text = if (isArabic) "عليه ${String.format(Locale.US, "%.2f ر.س", selectedCustomer.balance)}" else "Owes ${String.format(Locale.US, "%.2f SAR", selectedCustomer.balance)}",
+                                text = if (isArabic) "مدين بـ ${String.format(Locale.US, "%.2f ر.س", selectedCustomer.balance)}" else "Owes ${String.format(Locale.US, "%.2f SAR", selectedCustomer.balance)}",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = StatusRed
                             )
                         } else {
                             Text(
-                                text = if (isArabic) "تمت التسوية (خالص)" else "Settled",
+                                text = if (isArabic) "خالص (لا يوجد ديون)" else "Settled",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = StatusGreen
                             )
                         }
                     }
                 }
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         onClick = onChangeClick,
@@ -767,14 +702,13 @@ private fun CustomerSelectorCard(
                             color = GeoPrimary
                         )
                     }
-
                     IconButton(
                         onClick = onClearClick,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = if (isArabic) "إلغاء التحديد" else "Clear customer",
+                            contentDescription = if (isArabic) "مسح العميل" else "Clear customer",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
                         )
@@ -785,9 +719,6 @@ private fun CustomerSelectorCard(
     }
 }
 
-/**
- * 2-Column Product Grid Card
- */
 @Composable
 private fun ProductGridCard(
     product: ProductItem,
@@ -814,7 +745,6 @@ private fun ProductGridCard(
                 .fillMaxWidth()
                 .padding(10.dp)
         ) {
-            // Product Image Placeholder with quantity badge
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -832,8 +762,6 @@ private fun ProductGridCard(
                     tint = if (quantityInCart > 0) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.size(36.dp)
                 )
-
-                // Quantity badge when added to cart
                 if (quantityInCart > 0) {
                     Box(
                         modifier = Modifier
@@ -844,7 +772,7 @@ private fun ProductGridCard(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "×$quantityInCart",
+                            text = "× $quantityInCart",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -856,7 +784,6 @@ private fun ProductGridCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Product Name
             Text(
                 text = product.name,
                 style = MaterialTheme.typography.bodyMedium.copy(
@@ -871,7 +798,6 @@ private fun ProductGridCard(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Price and Unit
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -885,8 +811,6 @@ private fun ProductGridCard(
                     ),
                     color = GeoPrimary
                 )
-
-                // Small add icon affordance
                 Box(
                     modifier = Modifier
                         .size(28.dp)
@@ -906,9 +830,6 @@ private fun ProductGridCard(
     }
 }
 
-/**
- * Line item row in expanded Cart Drawer
- */
 @Composable
 private fun CartLineItemRow(
     item: CartItem,
@@ -919,7 +840,6 @@ private fun CartLineItemRow(
     onRemove: () -> Unit
 ) {
     val lineTotal = item.product.price * item.quantity
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -941,9 +861,7 @@ private fun CartLineItemRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Decrement button
             Box(
                 modifier = Modifier
                     .size(32.dp)
@@ -959,14 +877,11 @@ private fun CartLineItemRow(
                     modifier = Modifier.size(16.dp)
                 )
             }
-
             Text(
                 text = "${item.quantity}",
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
-
-            // Increment button
             Box(
                 modifier = Modifier
                     .size(32.dp)
@@ -982,17 +897,14 @@ private fun CartLineItemRow(
                     modifier = Modifier.size(16.dp)
                 )
             }
-
             Spacer(modifier = Modifier.width(6.dp))
-
-            // Delete item button
             IconButton(
                 onClick = onRemove,
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = if (isArabic) "حذف الصنف" else "Remove item",
+                    contentDescription = if (isArabic) "حذف العنصر" else "Remove item",
                     tint = StatusRed,
                     modifier = Modifier.size(18.dp)
                 )
@@ -1001,9 +913,6 @@ private fun CartLineItemRow(
     }
 }
 
-/**
- * Simple Customer Picker Dialog allowing interactive switching between Entry B and Entry A
- */
 @Composable
 private fun CustomerPickerDialog(
     customers: List<CustomerAccount>,
@@ -1012,6 +921,15 @@ private fun CustomerPickerDialog(
     onDismiss: () -> Unit,
     onSelectCustomer: (CustomerAccount) -> Unit
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredCustomers = remember(customers, searchQuery) {
+        if (searchQuery.isBlank()) customers
+        else {
+            val q = searchQuery.trim().lowercase()
+            customers.filter { it.customerName.lowercase().contains(q) || it.phone.contains(q) }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -1022,59 +940,113 @@ private fun CustomerPickerDialog(
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = if (isArabic) "اختر عميلاً لإتمام معاملة المشتريات:" else "Select a customer to complete this purchase:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 280.dp)
-                ) {
-                    items(customers, key = { it.id }) { customer ->
-                        val isSelected = customer.id == selectedCustomerId
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (isSelected) GeoPrimary.copy(alpha = 0.12f)
-                                    else Color.Transparent
-                                )
-                                .clickable { onSelectCustomer(customer) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = customer.customerName,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = customer.phone,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            if (isSelected) {
+                // Search field inside dialog
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = {
+                        Text(
+                            text = if (isArabic) StoreStrings.SEARCH_CUSTOMER_AR else StoreStrings.SEARCH_CUSTOMER_EN,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(32.dp)) {
                                 Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = "Selected",
-                                    tint = GeoPrimary,
-                                    modifier = Modifier.size(20.dp)
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
-                        HorizontalDivider(
-                            color = GeoOutlineVariant.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(horizontal = 8.dp)
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = GeoPrimary,
+                        unfocusedBorderColor = GeoOutline
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("dialog_customer_search_input")
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (filteredCustomers.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = if (isArabic) "لا يوجد عملاء مطابقون" else "No matching customers found",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp)
+                    ) {
+                        items(filteredCustomers, key = { it.id }) { customer ->
+                            val isSelected = customer.id == selectedCustomerId
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (isSelected) GeoPrimary.copy(alpha = 0.12f)
+                                        else Color.Transparent
+                                    )
+                                    .clickable { onSelectCustomer(customer) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = customer.customerName,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = customer.phone,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = GeoPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            HorizontalDivider(
+                                color = GeoOutlineVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                        }
                     }
                 }
             }

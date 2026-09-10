@@ -85,7 +85,6 @@ fun GlobalTopBar(
                         modifier = Modifier.size(24.dp)
                     )
                 }
-
                 NotificationBadge(
                     unreadCount = unreadNotificationsCount,
                     modifier = Modifier

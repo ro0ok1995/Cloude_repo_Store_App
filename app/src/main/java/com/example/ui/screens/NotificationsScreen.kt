@@ -39,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,25 +57,6 @@ import com.example.ui.theme.StatusRed
 import com.example.ui.theme.StatusRedBg
 import java.util.Locale
 
-/**
- * SmallStore NOTIFICATIONS Screen
- *
- * Rules:
- * - PURPOSE: Lightweight financial activity feed showing only 2 event types:
- *   "Record Transaction" (تم تسجيل معاملة) and "Payment" (تم استلام دفعة).
- * - TOP BAR: Title: "Notifications" (الإشعارات), Back arrow to return to previous screen (mirrors for RTL).
- * - LIST BEHAVIOR: Single scrollable vertical list with latest 50 items, newest first.
- *   No pagination, filters, tabs, or search bar.
- *   Displays: customer name, transaction type, amount, timestamp.
- * - READ / UNREAD VISUAL STATE:
- *   Unread row: small bright solid dot + bold text.
- *   Read row: no dot + lighter-weight text.
- *   Items become read when viewed in this open list.
- * - INTERACTION: Tapping row navigates to Account Statement with pre-selected customer;
- *   shows subtle chevron indicator.
- * - EMPTY STATE: Centered simple icon + text "No notifications yet" (لا توجد إشعارات حتى الآن).
- * - CONSTRAINTS: No separate notification-details screen, no categories/tabs.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsScreen(
@@ -90,7 +70,6 @@ fun NotificationsScreen(
     val isArabic = languageMode == LanguageMode.ARABIC
     val currency = if (isArabic) "ر.س" else "SAR"
 
-    // Mark items as read upon viewing in this open list without extra UI buttons
     LaunchedEffect(Unit) {
         onViewNotifications()
     }
@@ -101,7 +80,6 @@ fun NotificationsScreen(
             .background(MaterialTheme.colorScheme.background)
             .testTag("notifications_screen")
     ) {
-        // --- TOP BAR ---
         TopAppBar(
             title = {
                 Text(
@@ -123,7 +101,7 @@ fun NotificationsScreen(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = if (isArabic) "الرجوع" else "Back",
+                        contentDescription = if (isArabic) "رجوع" else "Back",
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(24.dp)
                     )
@@ -144,7 +122,6 @@ fun NotificationsScreen(
             }
         )
 
-        // --- CONTENT: EMPTY STATE OR SINGLE SCROLLABLE LIST (UP TO 50 ITEMS) ---
         if (notifications.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -170,7 +147,6 @@ fun NotificationsScreen(
                 item {
                     Spacer(modifier = Modifier.height(12.dp))
                 }
-
                 items(items = displayItems, key = { it.id }) { item ->
                     NotificationRowItem(
                         item = item,
@@ -178,7 +154,6 @@ fun NotificationsScreen(
                         onClick = { onNotificationClick(item) }
                     )
                 }
-
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -187,12 +162,6 @@ fun NotificationsScreen(
     }
 }
 
-/**
- * Single Financial Notification Row:
- * - Unread row: small bright solid dot + bold text
- * - Read row: no dot + lighter-weight text
- * - Row shows: customer name, transaction type, amount, timestamp, and a subtle chevron
- */
 @Composable
 private fun NotificationRowItem(
     item: NotificationItem,
@@ -224,7 +193,6 @@ private fun NotificationRowItem(
                 .padding(horizontal = 14.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // UNREAD INDICATOR: Small bright/solid dot next to row
             Box(
                 modifier = Modifier.size(10.dp),
                 contentAlignment = Alignment.Center
@@ -239,12 +207,9 @@ private fun NotificationRowItem(
                     )
                 }
             }
-
             Spacer(modifier = Modifier.width(10.dp))
 
-            // Main Content: Customer name, transaction type & timestamp
             Column(modifier = Modifier.weight(1f)) {
-                // Line 1: Customer Name (Bold if unread, normal if read)
                 Text(
                     text = item.customerName,
                     style = MaterialTheme.typography.bodyMedium.copy(
@@ -255,10 +220,7 @@ private fun NotificationRowItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-
                 Spacer(modifier = Modifier.height(3.dp))
-
-                // Line 2: Event Type Badge & Timestamp
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -274,9 +236,7 @@ private fun NotificationRowItem(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-
                     Spacer(modifier = Modifier.width(8.dp))
-
                     Text(
                         text = item.timestamp,
                         fontSize = 11.sp,
@@ -284,10 +244,8 @@ private fun NotificationRowItem(
                     )
                 }
             }
-
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Amount
             Text(
                 text = String.format(
                     Locale.US,
@@ -302,10 +260,7 @@ private fun NotificationRowItem(
                 ),
                 color = if (isPayment) StatusGreen else StatusRed
             )
-
             Spacer(modifier = Modifier.width(6.dp))
-
-            // Subtle Chevron ">" to indicate row is tappable
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,

@@ -21,8 +21,8 @@ import androidx.compose.material.icons.filled.AddCard
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -65,7 +65,6 @@ fun PlusActionSheet(
     onQuickPaymentClick: () -> Unit
 ) {
     if (!isOpen) return
-
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val isArabic = languageMode == LanguageMode.ARABIC
 
@@ -103,7 +102,7 @@ fun PlusActionSheet(
             // Choice 1: Record Transaction
             ActionSheetOptionItem(
                 title = if (isArabic) StoreStrings.RECORD_TRANSACTION_AR else StoreStrings.RECORD_TRANSACTION_EN,
-                description = if (isArabic) "تسجيل حركة مبيعات أو مشتريات جديدة" else "Add sales or purchase transaction entry",
+                description = if (isArabic) "إضافة عملية شراء أو بيع في الحساب" else "Add sales or purchase transaction entry",
                 icon = Icons.Default.AddCard,
                 testTag = "action_sheet_record_transaction",
                 onClick = onRecordTransactionClick
@@ -114,7 +113,7 @@ fun PlusActionSheet(
             // Choice 2: Quick Payment
             ActionSheetOptionItem(
                 title = if (isArabic) StoreStrings.QUICK_PAYMENT_AR else StoreStrings.QUICK_PAYMENT_EN,
-                description = if (isArabic) "تسجيل دفعة سداد أو سند قبض فوري" else "Record payment receipt or supplier disbursement",
+                description = if (isArabic) "تسجيل استلام دفعة نقدية أو تسديد دين" else "Record payment receipt or supplier disbursement",
                 icon = Icons.Default.Payment,
                 testTag = "action_sheet_quick_payment",
                 onClick = onQuickPaymentClick
@@ -157,9 +156,7 @@ private fun ActionSheetOptionItem(
                     modifier = Modifier.size(22.dp)
                 )
             }
-
             Spacer(modifier = Modifier.width(14.dp))
-
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -179,13 +176,6 @@ private fun ActionSheetOptionItem(
     }
 }
 
-/**
- * Record Transaction Bottom Sheet
- * Follows Component Style Baseline:
- * - Forms: clear labels above fields, optional fields explicitly marked "(optional)"
- * - Dialogs/bottom sheets: scrollable content, sticky footer action button
- * - Never more than one primary (filled) button visible
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordTransactionSheet(
@@ -195,7 +185,6 @@ fun RecordTransactionSheet(
     onSubmit: (customer: String, amount: Double, notes: String) -> Unit
 ) {
     if (!isOpen) return
-
     val isArabic = languageMode == LanguageMode.ARABIC
     var customerName by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
@@ -237,8 +226,7 @@ fun RecordTransactionSheet(
                     )
                 }
             }
-
-            Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             // Scrollable Form Body
             Column(
@@ -249,7 +237,7 @@ fun RecordTransactionSheet(
                     .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
                 // Customer Name Field
-                FormFieldLabel(text = if (isArabic) "اسم العميل أو الحساب" else "Customer / Account Name")
+                FormFieldLabel(text = if (isArabic) "اسم العميل / الحساب" else "Customer / Account Name")
                 OutlinedTextField(
                     value = customerName,
                     onValueChange = { customerName = it; errorText = null },
@@ -287,11 +275,11 @@ fun RecordTransactionSheet(
 
                 // Notes Field (Optional)
                 val optionalSuffix = if (isArabic) StoreStrings.OPTIONAL_AR else StoreStrings.OPTIONAL_EN
-                FormFieldLabel(text = "${if (isArabic) "ملاحظات وتفاصيل المعاملة" else "Transaction Notes"} $optionalSuffix")
+                FormFieldLabel(text = "${if (isArabic) "ملاحظات المعاملة" else "Transaction Notes"} $optionalSuffix")
                 OutlinedTextField(
                     value = notesText,
                     onValueChange = { notesText = it },
-                    placeholder = { Text(if (isArabic) "أدخل أي ملاحظات إضافية" else "Additional details") },
+                    placeholder = { Text(if (isArabic) "تفاصيل إضافية" else "Additional details") },
                     maxLines = 3,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -330,9 +318,9 @@ fun RecordTransactionSheet(
                         onClick = {
                             val amount = amountText.toDoubleOrNull()
                             if (customerName.isBlank()) {
-                                errorText = if (isArabic) "يرجى كتابة اسم العميل" else "Please enter customer name"
+                                errorText = if (isArabic) "يرجى إدخال اسم العميل" else "Please enter customer name"
                             } else if (amount == null || amount <= 0) {
-                                errorText = if (isArabic) "يرجى إدخال مبلغ صالح" else "Please enter a valid amount"
+                                errorText = if (isArabic) "يرجى إدخال مبلغ صحيح" else "Please enter a valid amount"
                             } else {
                                 onSubmit(customerName.trim(), amount, notesText.trim())
                             }
@@ -359,13 +347,6 @@ fun RecordTransactionSheet(
     }
 }
 
-/**
- * Quick Payment Bottom Sheet
- * Follows Component Style Baseline:
- * - Forms: clear labels above fields, optional fields explicitly marked "(optional)"
- * - Dialogs/bottom sheets: scrollable content, sticky footer action button
- * - Never more than one primary (filled) button visible
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickPaymentSheet(
@@ -375,7 +356,6 @@ fun QuickPaymentSheet(
     onSubmit: (customer: String, amount: Double, notes: String) -> Unit
 ) {
     if (!isOpen) return
-
     val isArabic = languageMode == LanguageMode.ARABIC
     var customerName by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
@@ -417,8 +397,7 @@ fun QuickPaymentSheet(
                     )
                 }
             }
-
-            Divider(color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
             // Scrollable Form Body
             Column(
@@ -429,7 +408,7 @@ fun QuickPaymentSheet(
                     .padding(horizontal = 20.dp, vertical = 16.dp)
             ) {
                 // Customer / Account
-                FormFieldLabel(text = if (isArabic) "العميل أو الحساب المسدد" else "Customer / Account")
+                FormFieldLabel(text = if (isArabic) "العميل / الحساب" else "Customer / Account")
                 OutlinedTextField(
                     value = customerName,
                     onValueChange = { customerName = it; errorText = null },
@@ -447,7 +426,7 @@ fun QuickPaymentSheet(
                 )
 
                 // Payment Amount
-                FormFieldLabel(text = if (isArabic) "مبلغ الدفعة المسدد (ر.س)" else "Payment Amount (SAR)")
+                FormFieldLabel(text = if (isArabic) "مبلغ الدفعة (ر.س)" else "Payment Amount (SAR)")
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it; errorText = null },
@@ -467,11 +446,11 @@ fun QuickPaymentSheet(
 
                 // Reference / Receipt (Optional)
                 val optionalSuffix = if (isArabic) StoreStrings.OPTIONAL_AR else StoreStrings.OPTIONAL_EN
-                FormFieldLabel(text = "${if (isArabic) "رقم سند القبض أو الإيصال" else "Receipt / Reference No."} $optionalSuffix")
+                FormFieldLabel(text = "${if (isArabic) "رقم السند / المرجع" else "Receipt / Reference No."} $optionalSuffix")
                 OutlinedTextField(
                     value = refText,
                     onValueChange = { refText = it },
-                    placeholder = { Text(if (isArabic) "مثال: سند رقم #402" else "e.g. Receipt #402") },
+                    placeholder = { Text(if (isArabic) "مثال: سند #402" else "e.g. Receipt #402") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -510,9 +489,9 @@ fun QuickPaymentSheet(
                         onClick = {
                             val amount = amountText.toDoubleOrNull()
                             if (customerName.isBlank()) {
-                                errorText = if (isArabic) "يرجى كتابة اسم العميل" else "Please enter customer name"
+                                errorText = if (isArabic) "يرجى إدخال اسم العميل" else "Please enter customer name"
                             } else if (amount == null || amount <= 0) {
-                                errorText = if (isArabic) "يرجى إدخال مبلغ صالح" else "Please enter a valid amount"
+                                errorText = if (isArabic) "يرجى إدخال مبلغ صحيح" else "Please enter a valid amount"
                             } else {
                                 onSubmit(customerName.trim(), amount, refText.trim())
                             }

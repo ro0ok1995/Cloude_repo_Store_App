@@ -40,11 +40,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,32 +59,8 @@ import java.util.Locale
 
 /**
  * UNIFIED SETTLEMENT dialog/bottom-sheet of SmallStore.
- *
  * Generic, reusable version used both after "Complete Transaction" in Purchases
  * and after choosing amounts in Quick Payment.
- *
- * LAYOUT:
- * - Bottom-sheet style dialog (not a full screen), rounded top corners, with a visible drag handle at the top.
- * - Title inside the sheet: "Settlement" ("تسوية").
- *
- * CONTENT:
- * - Transaction Total shown prominently at the top (large bold number).
- * - Cash Amount and Debt Amount fields/values (rendered as editable fields for generality).
- * - Two computed, read-only summary lines below the inputs:
- *     1. "Total Paid = Cash Amount + Debt Amount"
- *     2. "Remaining Balance = Transaction Total − Total Paid"
- * - Worked example sample data: Transaction Total = 100, Cash = 50, Debt = 40 → Total Paid = 90, Remaining = 10.
- * - An optional "Notes" field below the summary, labeled "(optional)".
- *
- * BEHAVIOR TO IMPLY VISUALLY:
- * - Scrollable form body with sticky footer action button anchored at the bottom.
- *
- * BOTTOM ACTION:
- * - One primary button: "Complete" ("إتمام").
- *
- * CONSTRAINTS:
- * - No payment-method icon row, receipt preview, or share/print option.
- * - Default simple light theme, RTL Arabic layout.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,7 +75,6 @@ fun UnifiedSettlementSheet(
     onComplete: (cash: Double, debt: Double, notes: String) -> Unit = { _, _, _ -> }
 ) {
     if (!isOpen) return
-
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val layoutDirection = if (languageMode == LanguageMode.ARABIC) LayoutDirection.Rtl else LayoutDirection.Ltr
 
@@ -111,7 +86,6 @@ fun UnifiedSettlementSheet(
             containerColor = MaterialTheme.colorScheme.surface,
             tonalElevation = 2.dp,
             dragHandle = {
-                // Visible drag handle at the top
                 Box(
                     modifier = Modifier
                         .padding(top = 12.dp, bottom = 8.dp)
@@ -135,10 +109,6 @@ fun UnifiedSettlementSheet(
     }
 }
 
-/**
- * The inner content of the Unified Settlement Sheet.
- * Kept modular for direct embedding, screenshot tests, and interactive usage.
- */
 @Composable
 fun UnifiedSettlementSheetContent(
     languageMode: LanguageMode = LanguageMode.ARABIC,
@@ -150,12 +120,12 @@ fun UnifiedSettlementSheetContent(
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
     val currency = if (isArabic) "ر.س" else "SAR"
+    val focusManager = LocalFocusManager.current
 
     var cashAmountText by remember(initialCashAmount) { mutableStateOf(initialCashAmount) }
     var debtAmountText by remember(initialDebtAmount) { mutableStateOf(initialDebtAmount) }
     var notesText by remember(initialNotes) { mutableStateOf(initialNotes) }
 
-    // Computed values
     val parsedCash = cashAmountText.toDoubleOrNull() ?: 0.0
     val parsedDebt = debtAmountText.toDoubleOrNull() ?: 0.0
     val totalPaid = parsedCash + parsedDebt
@@ -166,9 +136,7 @@ fun UnifiedSettlementSheetContent(
             .fillMaxWidth()
             .testTag("unified_settlement_content")
     ) {
-        // -----------------------------------------------------------
-        // 1. TITLE INSIDE SHEET: "Settlement" ("تسوية")
-        // -----------------------------------------------------------
+        // 1. TITLE
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -191,10 +159,7 @@ fun UnifiedSettlementSheetContent(
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
 
-        // -----------------------------------------------------------
         // 2. SCROLLABLE FORM BODY
-        // Remains scrollable if content is long on a small screen
-        // -----------------------------------------------------------
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -242,7 +207,7 @@ fun UnifiedSettlementSheetContent(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // CASH AMOUNT (Editable Field)
+            // CASH AMOUNT
             SettlementFieldLabel(
                 text = if (isArabic) StoreStrings.CASH_AMOUNT_LABEL_AR else StoreStrings.CASH_AMOUNT_LABEL_EN
             )
@@ -274,7 +239,7 @@ fun UnifiedSettlementSheetContent(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // DEBT AMOUNT (Editable Field)
+            // DEBT AMOUNT
             SettlementFieldLabel(
                 text = if (isArabic) StoreStrings.DEBT_AMOUNT_LABEL_AR else StoreStrings.DEBT_AMOUNT_LABEL_EN
             )
@@ -306,12 +271,7 @@ fun UnifiedSettlementSheetContent(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // -----------------------------------------------------------
-            // 3. TWO COMPUTED, READ-ONLY SUMMARY LINES
-            // "Total Paid = Cash Amount + Debt Amount"
-            // "Remaining Balance = Transaction Total − Total Paid"
-            // Worked example: Total Paid = 90, Remaining = 10
-            // -----------------------------------------------------------
+            // 3. TWO COMPUTED READ-ONLY SUMMARY LINES
             Card(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(
@@ -345,16 +305,11 @@ fun UnifiedSettlementSheetContent(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = if (isArabic) {
-                                    "${String.format(Locale.US, "%.2f", parsedCash)} + ${String.format(Locale.US, "%.2f", parsedDebt)}"
-                                } else {
-                                    "${String.format(Locale.US, "%.2f", parsedCash)} + ${String.format(Locale.US, "%.2f", parsedDebt)}"
-                                },
+                                text = "${String.format(Locale.US, "%.2f", parsedCash)} + ${String.format(Locale.US, "%.2f", parsedDebt)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-
                         Text(
                             text = String.format(Locale.US, "%.2f %s", totalPaid, currency),
                             style = MaterialTheme.typography.titleMedium.copy(
@@ -369,7 +324,7 @@ fun UnifiedSettlementSheetContent(
                     HorizontalDivider(color = GeoOutlineVariant)
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Line 2: Remaining Balance = Transaction Total − Total Paid
+                    // Line 2: Remaining Balance = Transaction Total - Total Paid
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -387,16 +342,11 @@ fun UnifiedSettlementSheetContent(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = if (isArabic) {
-                                    "${String.format(Locale.US, "%.2f", transactionTotal)} − ${String.format(Locale.US, "%.2f", totalPaid)}"
-                                } else {
-                                    "${String.format(Locale.US, "%.2f", transactionTotal)} − ${String.format(Locale.US, "%.2f", totalPaid)}"
-                                },
+                                text = "${String.format(Locale.US, "%.2f", transactionTotal)} - ${String.format(Locale.US, "%.2f", totalPaid)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-
                         Text(
                             text = String.format(Locale.US, "%.2f %s", remainingBalance, currency),
                             style = MaterialTheme.typography.titleMedium.copy(
@@ -411,10 +361,7 @@ fun UnifiedSettlementSheetContent(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // -----------------------------------------------------------
-            // 4. OPTIONAL "NOTES" FIELD BELOW SUMMARY
-            // Labeled "(optional)" / "ملاحظات (اختياري)"
-            // -----------------------------------------------------------
+            // 4. OPTIONAL "NOTES" FIELD
             val optionalLabel = if (isArabic) StoreStrings.NOTES_LABEL_AR else StoreStrings.NOTES_LABEL_EN
             SettlementFieldLabel(text = optionalLabel)
             OutlinedTextField(
@@ -444,10 +391,7 @@ fun UnifiedSettlementSheetContent(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // -----------------------------------------------------------
-        // 5. STICKY FOOTER ACTION BUTTON (Never scrolls out of view)
-        // One primary button: "Complete" ("إتمام")
-        // -----------------------------------------------------------
+        // 5. STICKY FOOTER ACTION BUTTON
         Surface(
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp,
@@ -462,6 +406,7 @@ fun UnifiedSettlementSheetContent(
             ) {
                 Button(
                     onClick = {
+                        focusManager.clearFocus()
                         onComplete(parsedCash, parsedDebt, notesText.trim())
                     },
                     colors = ButtonDefaults.buttonColors(
