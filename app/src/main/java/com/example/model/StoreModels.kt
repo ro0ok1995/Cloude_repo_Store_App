@@ -24,6 +24,39 @@ enum class NavDestination {
     CONTACT_SUPPORT
 }
 
+enum class MoreMenuItemId {
+    STORE_INFORMATION,
+    APP_SETTINGS,
+    DATA_CENTER,
+    ABOUT,
+    PRIVACY_POLICY,
+    TERMS_OF_USE,
+    CONTACT_SUPPORT;
+
+    fun toNavDestination(): NavDestination = when (this) {
+        STORE_INFORMATION -> NavDestination.STORE_INFORMATION
+        APP_SETTINGS -> NavDestination.APP_SETTINGS
+        DATA_CENTER -> NavDestination.DATA_CENTER
+        ABOUT -> NavDestination.ABOUT
+        PRIVACY_POLICY -> NavDestination.PRIVACY_POLICY
+        TERMS_OF_USE -> NavDestination.TERMS_OF_USE
+        CONTACT_SUPPORT -> NavDestination.CONTACT_SUPPORT
+    }
+
+    companion object {
+        fun fromNavDestination(destination: NavDestination): MoreMenuItemId? = when (destination) {
+            NavDestination.STORE_INFORMATION -> STORE_INFORMATION
+            NavDestination.APP_SETTINGS -> APP_SETTINGS
+            NavDestination.DATA_CENTER -> DATA_CENTER
+            NavDestination.ABOUT -> ABOUT
+            NavDestination.PRIVACY_POLICY -> PRIVACY_POLICY
+            NavDestination.TERMS_OF_USE -> TERMS_OF_USE
+            NavDestination.CONTACT_SUPPORT -> CONTACT_SUPPORT
+            else -> null
+        }
+    }
+}
+
 enum class AppThemeMode {
     NEUTRAL,
     PURPLE,

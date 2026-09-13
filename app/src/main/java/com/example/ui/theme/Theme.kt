@@ -9,7 +9,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.example.model.AppThemeMode
+import com.example.model.MoreMenuItemId
 import com.example.model.ThemeDisplayMode
+
+typealias AppThemeMode = com.example.model.AppThemeMode
+typealias MoreMenuItemId = com.example.model.MoreMenuItemId
 
 // Geometric Balance Color Scheme (Clean #F7F9FC background, #6750A4 accent, #1A1C1E text)
 private val GeometricBalanceColorScheme = lightColorScheme(
