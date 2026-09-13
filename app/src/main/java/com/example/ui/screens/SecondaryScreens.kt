@@ -20,12 +20,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
@@ -71,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AppThemeMode
 import com.example.model.LanguageMode
+import com.example.model.NavDestination
 import com.example.model.StoreInfo
 import com.example.model.StoreStrings
 import com.example.model.ThemeDisplayMode
@@ -433,10 +438,24 @@ fun DataCenterScreen(
     languageMode: LanguageMode,
     onBackClick: () -> Unit,
     onResetData: () -> Unit,
+    onExportBackup: ((android.net.Uri) -> Unit)? = null,
+    onImportBackup: ((android.net.Uri) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
     var showConfirmReset by remember { mutableStateOf(false) }
+
+    val createDocLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: android.net.Uri? ->
+        uri?.let { onExportBackup?.invoke(it) }
+    }
+
+    val openDocLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri: android.net.Uri? ->
+        uri?.let { onImportBackup?.invoke(it) }
+    }
 
     Column(
         modifier = modifier
@@ -493,7 +512,10 @@ fun DataCenterScreen(
                         )
                     }
                     Button(
-                        onClick = { /* Backup action */ },
+                        onClick = {
+                            val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+                            createDocLauncher.launch("SmallStore_Backup_$timestamp.json")
+                        },
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
                         modifier = Modifier.testTag("backup_button")
@@ -531,7 +553,9 @@ fun DataCenterScreen(
                         )
                     }
                     OutlinedButton(
-                        onClick = { /* Restore action */ },
+                        onClick = {
+                            openDocLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+                        },
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.testTag("restore_button")
                     ) {
@@ -671,11 +695,11 @@ fun GenericContentScreen(
 @Composable
 fun AboutAppScreen(
     languageMode: LanguageMode,
+    onNavigate: (NavDestination) -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
-    val context = LocalContext.current
 
     Column(
         modifier = modifier
@@ -705,7 +729,7 @@ fun AboutAppScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // App Brand Header Card
+            // App Brand Header Card with summary
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -748,10 +772,7 @@ fun AboutAppScreen(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = if (isArabic)
-                            "تطبيق متكامل لإدارة حسابات المتاجر الصغيرة ومتابعة ديون العملاء والمبيعات النقدية والآجلة والأقساط والتقارير المالية دون الحاجة للاتصال بالإنترنت."
-                        else
-                            "Comprehensive retail management app for tracking customer debts, cash and credit purchases, instant payments, and detailed financial reports offline.",
+                        text = if (isArabic) StoreStrings.ABOUT_APP_SUMMARY_AR else StoreStrings.ABOUT_APP_SUMMARY_EN,
                         style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -759,40 +780,209 @@ fun AboutAppScreen(
                 }
             }
 
-            // Developer & Studio Section (Consolidated Support)
+            // Three nested items: Privacy Policy, Terms of Use, Contact Support
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, GeoOutlineVariant, RoundedCornerShape(16.dp))
+                    .testTag("about_links_card")
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigate(NavDestination.PRIVACY_POLICY) }
+                            .padding(horizontal = 16.dp, vertical = 15.dp)
+                            .testTag("about_item_privacy"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = GeoPrimary.copy(alpha = 0.08f),
+                            shape = CircleShape,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = GeoPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = if (isArabic) StoreStrings.PRIVACY_POLICY_AR else StoreStrings.PRIVACY_POLICY_EN,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    HorizontalDivider(color = GeoOutlineVariant, thickness = 0.5.dp)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigate(NavDestination.TERMS_OF_USE) }
+                            .padding(horizontal = 16.dp, vertical = 15.dp)
+                            .testTag("about_item_terms"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = GeoPrimary.copy(alpha = 0.08f),
+                            shape = CircleShape,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = GeoPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = if (isArabic) StoreStrings.TERMS_OF_USE_AR else StoreStrings.TERMS_OF_USE_EN,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    HorizontalDivider(color = GeoOutlineVariant, thickness = 0.5.dp)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onNavigate(NavDestination.CONTACT_SUPPORT) }
+                            .padding(horizontal = 16.dp, vertical = 15.dp)
+                            .testTag("about_item_support"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = GeoPrimary.copy(alpha = 0.08f),
+                            shape = CircleShape,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.HelpOutline,
+                                    contentDescription = null,
+                                    tint = GeoPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = if (isArabic) StoreStrings.CONTACT_SUPPORT_AR else StoreStrings.CONTACT_SUPPORT_EN,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContactSupportScreen(
+    languageMode: LanguageMode,
+    onBackClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isArabic = languageMode == LanguageMode.ARABIC
+    val context = LocalContext.current
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .testTag("screen_contact_support")
+    ) {
+        TopAppBar(
+            title = {
+                Text(
+                    text = if (isArabic) StoreStrings.CONTACT_SUPPORT_TITLE_AR else StoreStrings.CONTACT_SUPPORT_TITLE_EN,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            navigationIcon = {
+                IconButton(onClick = onBackClick, modifier = Modifier.testTag("support_back_button")) {
+                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // 1. Studio & Description Card
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(1.dp, GeoOutlineVariant, RoundedCornerShape(16.dp))
-                    .testTag("about_support_section")
+                    .testTag("support_studio_card")
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             color = GeoPrimary.copy(alpha = 0.10f),
                             shape = CircleShape,
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(44.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.Person,
                                     contentDescription = null,
                                     tint = GeoPrimary,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = if (isArabic) "المطور والجهة المسؤولة" else "Developer & Studio",
+                                text = if (isArabic) "الاستوديو والجهة المطورة" else "Studio & Developer",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "MrGazawe Studio",
+                                text = StoreStrings.CONTACT_SUPPORT_NAME,
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -803,7 +993,24 @@ fun AboutAppScreen(
                     HorizontalDivider(color = GeoOutlineVariant)
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Contact Details: Phone / WhatsApp
+                    Text(
+                        text = if (isArabic) StoreStrings.CONTACT_SUPPORT_DESC_AR else StoreStrings.CONTACT_SUPPORT_DESC_EN,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // 2. WhatsApp Card
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, GeoOutlineVariant, RoundedCornerShape(16.dp))
+                    .testTag("support_whatsapp_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -813,24 +1020,32 @@ fun AboutAppScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Phone,
-                                contentDescription = null,
-                                tint = GeoPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                color = Color(0xFF25D366).copy(alpha = 0.12f),
+                                shape = CircleShape,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Phone,
+                                        contentDescription = null,
+                                        tint = Color(0xFF1EBE5D),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = if (isArabic) "الهاتف / واتساب" else "Phone / WhatsApp",
+                                    text = if (isArabic) StoreStrings.CONTACT_SUPPORT_PHONE_LABEL_AR else StoreStrings.CONTACT_SUPPORT_PHONE_LABEL_EN,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
                                     text = StoreStrings.CONTACT_SUPPORT_PHONE,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.testTag("about_contact_phone")
+                                    modifier = Modifier.testTag("support_phone_text")
                                 )
                             }
                         }
@@ -840,7 +1055,7 @@ fun AboutAppScreen(
                             IconButton(
                                 onClick = {
                                     val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    val clip = android.content.ClipData.newPlainText("phone", StoreStrings.CONTACT_SUPPORT_PHONE)
+                                    val clip = android.content.ClipData.newPlainText("whatsapp", StoreStrings.CONTACT_SUPPORT_PHONE)
                                     clipboard.setPrimaryClip(clip)
                                     android.widget.Toast.makeText(
                                         context,
@@ -850,11 +1065,11 @@ fun AboutAppScreen(
                                 },
                                 modifier = Modifier
                                     .size(36.dp)
-                                    .testTag("about_copy_phone_button")
+                                    .testTag("support_copy_whatsapp_button")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Save,
-                                    contentDescription = "Copy phone",
+                                    contentDescription = "Copy WhatsApp",
                                     tint = GeoPrimary,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -874,7 +1089,7 @@ fun AboutAppScreen(
                                 },
                                 modifier = Modifier
                                     .size(36.dp)
-                                    .testTag("about_call_button")
+                                    .testTag("support_call_button")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Phone,
@@ -886,71 +1101,14 @@ fun AboutAppScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Contact Details: Email
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = null,
-                                tint = GeoPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = if (isArabic) "البريد الإلكتروني" else "Email",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "support@smallstore.app",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.testTag("about_contact_email")
-                                )
-                            }
-                        }
-
-                        IconButton(
-                            onClick = {
-                                try {
-                                    val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
-                                        data = android.net.Uri.parse("mailto:support@smallstore.app")
-                                    }
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .testTag("about_email_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = "Send Email",
-                                tint = GeoPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // WhatsApp Action Button
+                    // WhatsApp Direct Chat Button
                     Button(
                         onClick = {
                             try {
-                                val url = "https://wa.me/966${StoreStrings.CONTACT_SUPPORT_PHONE.removePrefix("0")}"
+                                val cleanPhone = StoreStrings.CONTACT_SUPPORT_PHONE.replace("+", "").replace(" ", "")
+                                val url = "https://wa.me/$cleanPhone"
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
                                 context.startActivity(intent)
                             } catch (e: Exception) {
@@ -962,10 +1120,113 @@ fun AboutAppScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(44.dp)
-                            .testTag("about_whatsapp_button")
+                            .testTag("support_whatsapp_button")
                     ) {
                         Text(
-                            text = if (isArabic) "مراسلة استوديو مستر غزاوي عبر واتساب" else "Chat on WhatsApp (MrGazawe Studio)",
+                            text = if (isArabic) "مراسلة عبر واتساب (${StoreStrings.CONTACT_SUPPORT_PHONE})" else "Chat on WhatsApp (${StoreStrings.CONTACT_SUPPORT_PHONE})",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            // 3. Email Card
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, GeoOutlineVariant, RoundedCornerShape(16.dp))
+                    .testTag("support_email_card")
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                color = GeoPrimary.copy(alpha = 0.10f),
+                                shape = CircleShape,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Email,
+                                        contentDescription = null,
+                                        tint = GeoPrimary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = if (isArabic) "البريد الإلكتروني" else "Email",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = StoreStrings.CONTACT_SUPPORT_EMAIL,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.testTag("support_email_text")
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("email", StoreStrings.CONTACT_SUPPORT_EMAIL)
+                                clipboard.setPrimaryClip(clip)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    if (isArabic) StoreStrings.CONTACT_SUPPORT_COPIED_AR else StoreStrings.CONTACT_SUPPORT_COPIED_EN,
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("support_copy_email_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Save,
+                                contentDescription = "Copy Email",
+                                tint = GeoPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Email Send Button
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+                                    data = android.net.Uri.parse("mailto:${StoreStrings.CONTACT_SUPPORT_EMAIL}")
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("support_email_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.Email, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isArabic) "إرسال بريد إلكتروني" else "Send Email",
                             fontWeight = FontWeight.Bold
                         )
                     }

@@ -97,15 +97,17 @@ fun GlobalTopBar(
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onSurface
         ),
-        modifier = modifier.drawBehind {
-            // Subtle 1dp border bottom matching border-b border-neutral-200
-            val strokeWidth = 1.dp.toPx()
-            drawLine(
-                color = GeoOutline,
-                start = Offset(0f, size.height - strokeWidth / 2),
-                end = Offset(size.width, size.height - strokeWidth / 2),
-                strokeWidth = strokeWidth
-            )
+        modifier = run {
+            val borderColor = MaterialTheme.colorScheme.outlineVariant
+            modifier.drawBehind {
+                val strokeWidth = 1.dp.toPx()
+                drawLine(
+                    color = borderColor,
+                    start = Offset(0f, size.height - strokeWidth / 2),
+                    end = Offset(size.width, size.height - strokeWidth / 2),
+                    strokeWidth = strokeWidth
+                )
+            }
         }
     )
 }

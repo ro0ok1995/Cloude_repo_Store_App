@@ -42,17 +42,12 @@ import androidx.compose.ui.unit.sp
 import com.example.model.LanguageMode
 import com.example.model.NavDestination
 import com.example.model.StoreStrings
-import com.example.ui.theme.GeoNavActivePill
-import com.example.ui.theme.GeoNavActiveText
-import com.example.ui.theme.GeoNavInactive
-import com.example.ui.theme.GeoOutline
-import com.example.ui.theme.GeoPrimary
 
 /**
  * Geometric Balance Bottom Navigation Bar:
  * Grid of 5 items, h-20 (78dp), border-t border-neutral-200,
- * Active tab has rounded-full pill background (#D3E4FF) with #001C38 text,
- * Central elevated button has #6750A4 background, -top-6 elevation, 62dp circular shadow.
+ * Active tab has rounded-full pill background with theme-aware text & icon,
+ * Central elevated button has primary background, -top-6 elevation, 62dp circular shadow.
  */
 @Composable
 fun GlobalBottomBar(
@@ -63,6 +58,7 @@ fun GlobalBottomBar(
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
+    val borderColor = MaterialTheme.colorScheme.outlineVariant
     Surface(
         color = MaterialTheme.colorScheme.surface,
         modifier = modifier
@@ -70,7 +66,7 @@ fun GlobalBottomBar(
             .drawBehind {
                 val strokeWidth = 1.dp.toPx()
                 drawLine(
-                    color = GeoOutline,
+                    color = borderColor,
                     start = Offset(0f, 0f),
                     end = Offset(size.width, 0f),
                     strokeWidth = strokeWidth
@@ -106,7 +102,7 @@ fun GlobalBottomBar(
                 modifier = Modifier.weight(1f)
             )
 
-            // 3. Central Prominent Action Button (+) - Visually elevated -top-6 (#6750A4)
+            // 3. Central Prominent Action Button (+) - Visually elevated -top-6
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -118,7 +114,7 @@ fun GlobalBottomBar(
                         .size(62.dp)
                         .shadow(elevation = 8.dp, shape = CircleShape)
                         .clip(CircleShape)
-                        .background(GeoPrimary)
+                        .background(MaterialTheme.colorScheme.primary)
                         .clickable(onClick = onPlusClick)
                         .testTag("bottom_nav_plus_button"),
                     contentAlignment = Alignment.Center
@@ -146,9 +142,9 @@ fun GlobalBottomBar(
             GeometricBottomNavItem(
                 label = if (isArabic) StoreStrings.MORE_AR else StoreStrings.MORE_EN,
                 icon = Icons.Default.MoreHoriz,
-                isSelected = currentDestination == NavDestination.MORE_SETTINGS,
+                isSelected = currentDestination == NavDestination.MORE || currentDestination == NavDestination.MORE_SETTINGS,
                 testTag = "bottom_nav_more",
-                onClick = { onNavigate(NavDestination.MORE_SETTINGS) },
+                onClick = { onNavigate(NavDestination.MORE) },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -177,14 +173,14 @@ private fun GeometricBottomNavItem(
             Box(
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(GeoNavActivePill)
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
                     .padding(horizontal = 16.dp, vertical = 3.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = GeoNavActiveText,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -192,7 +188,7 @@ private fun GeometricBottomNavItem(
                 text = label,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
-                color = GeoNavActiveText,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp)
@@ -201,14 +197,14 @@ private fun GeometricBottomNavItem(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = GeoNavInactive,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(24.dp)
             )
             Text(
                 text = label,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Medium,
-                color = GeoNavInactive,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp)

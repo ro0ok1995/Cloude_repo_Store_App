@@ -12,6 +12,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import com.example.model.AppCurrency
 import com.example.model.StoreStrings
 import java.io.File
 import java.io.FileOutputStream
@@ -91,7 +92,7 @@ object ReportExporter {
         netBalance: Double,
         isArabic: Boolean
     ): String {
-        val currency = if (isArabic) "ر.س" else "SAR"
+        val currency = AppCurrency.SYMBOL
         val sb = StringBuilder()
         if (isArabic) {
             sb.append("📄 كشف حساب - سمول ستور\n")

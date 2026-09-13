@@ -59,13 +59,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AppCurrency
 import com.example.model.CustomerAccount
 import com.example.model.StoreStrings
-import com.example.ui.theme.GeoOutline
-import com.example.ui.theme.GeoOutlineVariant
-import com.example.ui.theme.GeoPrimary
-import com.example.ui.theme.StatusGreen
-import com.example.ui.theme.StatusRed
+import com.example.ui.theme.statusGreen
+import com.example.ui.theme.statusRed
 import java.util.Locale
 
 /**
@@ -83,7 +81,7 @@ fun CustomerSearchField(
     modifier: Modifier = Modifier,
     selectedCustomerId: String? = null,
     placeholderText: String? = null,
-    currency: String = "ر.س",
+    currency: String = AppCurrency.SYMBOL,
     isArabic: Boolean = true,
     showBalance: Boolean = true,
     inputTestTag: String = "customer_search_input",
@@ -150,7 +148,7 @@ fun CustomerSearchField(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = if (isArabic) "بحث" else "Search",
-                        tint = if (isFocused) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
                 },
@@ -201,8 +199,8 @@ fun CustomerSearchField(
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    focusedBorderColor = GeoPrimary,
-                    unfocusedBorderColor = if (selectedCustomerId != null) GeoPrimary.copy(alpha = 0.6f) else GeoOutline
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = if (selectedCustomerId != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant
                 ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(
@@ -219,7 +217,7 @@ fun CustomerSearchField(
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                    border = BorderStroke(1.dp, GeoOutlineVariant),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp)
@@ -277,7 +275,7 @@ fun CustomerSearchField(
                                     }
                                 )
                                 HorizontalDivider(
-                                    color = GeoOutlineVariant.copy(alpha = 0.5f),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                                     thickness = 0.5.dp,
                                     modifier = Modifier.padding(horizontal = 12.dp)
                                 )
@@ -304,7 +302,7 @@ private fun CustomerDropdownRow(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .background(
-                if (isSelected) GeoPrimary.copy(alpha = 0.08f) else Color.Transparent
+                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
             )
             .padding(horizontal = 14.dp, vertical = 11.dp)
             .testTag(testTag),
@@ -317,7 +315,7 @@ private fun CustomerDropdownRow(
         ) {
             // Customer avatar with initial
             Surface(
-                color = if (isSelected) GeoPrimary else GeoPrimary.copy(alpha = 0.12f),
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
                 shape = CircleShape,
                 modifier = Modifier.size(34.dp)
             ) {
@@ -325,7 +323,7 @@ private fun CustomerDropdownRow(
                     Text(
                         text = customer.customerName.take(1),
                         fontWeight = FontWeight.Bold,
-                        color = if (isSelected) Color.White else GeoPrimary,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
                         fontSize = 14.sp
                     )
                 }
@@ -339,7 +337,7 @@ private fun CustomerDropdownRow(
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
                     ),
-                    color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.onSurface,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -364,7 +362,7 @@ private fun CustomerDropdownRow(
                     text = String.format(Locale.US, "%,.2f %s", customer.balance, currency),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (customer.balance > 0) StatusRed else StatusGreen
+                    color = if (customer.balance > 0) MaterialTheme.colorScheme.statusRed else MaterialTheme.colorScheme.statusGreen
                 )
             }
 
@@ -372,7 +370,7 @@ private fun CustomerDropdownRow(
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Selected",
-                    tint = GeoPrimary,
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)
                 )
             }

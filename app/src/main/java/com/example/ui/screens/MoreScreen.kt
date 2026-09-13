@@ -19,12 +19,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.Card
@@ -126,16 +123,7 @@ fun MoreScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // SECTION: SETTINGS & DATA
-        Text(
-            text = if (isArabic) "الإعدادات والبيانات" else "Settings & Data",
-            style = MaterialTheme.typography.titleSmall.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
-        )
+        // SECTION: MAIN DESTINATIONS
         Card(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -165,56 +153,12 @@ fun MoreScreen(
                     testTag = "more_item_data_center",
                     onClick = { onNavigate(NavDestination.DATA_CENTER) }
                 )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // SECTION: ABOUT & LEGAL
-        Text(
-            text = if (isArabic) "حول والدعم" else "About & Legal",
-            style = MaterialTheme.typography.titleSmall.copy(
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
-        )
-        Card(
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(width = 1.dp, color = GeoOutlineVariant, shape = RoundedCornerShape(14.dp))
-        ) {
-            Column {
+                MoreNavDivider()
                 MoreNavRow(
                     icon = Icons.Default.Info,
                     label = if (isArabic) StoreStrings.ABOUT_SMALLSTORE_AR else StoreStrings.ABOUT_SMALLSTORE_EN,
                     testTag = "more_item_about",
                     onClick = { onNavigate(NavDestination.ABOUT) }
-                )
-                MoreNavDivider()
-                MoreNavRow(
-                    icon = Icons.Default.Lock,
-                    label = if (isArabic) StoreStrings.PRIVACY_POLICY_AR else StoreStrings.PRIVACY_POLICY_EN,
-                    testTag = "more_item_privacy",
-                    onClick = { onNavigate(NavDestination.PRIVACY_POLICY) }
-                )
-                MoreNavDivider()
-                MoreNavRow(
-                    icon = Icons.Default.Description,
-                    label = if (isArabic) StoreStrings.TERMS_OF_USE_AR else StoreStrings.TERMS_OF_USE_EN,
-                    testTag = "more_item_terms",
-                    onClick = { onNavigate(NavDestination.TERMS_OF_USE) }
-                )
-                MoreNavDivider()
-                MoreNavRow(
-                    icon = Icons.AutoMirrored.Filled.HelpOutline,
-                    label = if (isArabic) StoreStrings.CONTACT_SUPPORT_AR else StoreStrings.CONTACT_SUPPORT_EN,
-                    testTag = "more_item_support",
-                    onClick = { onNavigate(NavDestination.CONTACT_SUPPORT) }
                 )
             }
         }

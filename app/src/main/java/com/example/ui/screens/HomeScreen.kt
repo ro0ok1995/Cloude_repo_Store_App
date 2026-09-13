@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AppCurrency
 import com.example.model.CustomerAccount
 import com.example.model.LanguageMode
 import com.example.model.PeriodFilter
@@ -68,15 +69,15 @@ import com.example.model.StoreStrings
 import com.example.model.TransactionItem
 import com.example.ui.components.CustomerSearchField
 import com.example.ui.components.SimpleEmptyState
-import com.example.ui.theme.GeoOutline
-import com.example.ui.theme.GeoOutlineVariant
-import com.example.ui.theme.GeoPrimary
-import com.example.ui.theme.StatusAmber
-import com.example.ui.theme.StatusBlue
-import com.example.ui.theme.StatusGreen
-import com.example.ui.theme.StatusGreenBg
-import com.example.ui.theme.StatusRed
-import com.example.ui.theme.StatusRedBg
+import com.example.ui.components.StoreDebtAgingSummaryCard
+import com.example.ui.theme.statusAmber
+import com.example.ui.theme.statusBlue
+import com.example.ui.theme.statusGreen
+import com.example.ui.theme.statusGreenContainer
+import com.example.ui.theme.statusRed
+import com.example.ui.theme.statusRedContainer
+import com.example.viewmodel.DebtAgingUtils
+import com.example.viewmodel.StoreDebtAgingSummary
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -96,11 +97,20 @@ fun HomeScreen(
     onClearSelectedCustomer: () -> Unit,
     onSelectPeriod: (PeriodFilter) -> Unit,
     modifier: Modifier = Modifier,
-    allCustomers: List<CustomerAccount> = matchingCustomers
+    allCustomers: List<CustomerAccount> = matchingCustomers,
+    allTransactions: List<TransactionItem> = transactions
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
-    val currency = if (isArabic) "ر.س" else "SAR"
+    val currency = AppCurrency.SYMBOL
     val focusManager = LocalFocusManager.current
+
+    val storeAgingSummary = remember(allCustomers, allTransactions, isArabic) {
+        DebtAgingUtils.calculateStoreDebtAgingSummary(
+            customers = allCustomers.ifEmpty { matchingCustomers },
+            allTransactions = allTransactions,
+            isArabic = isArabic
+        )
+    }
 
     Column(
         modifier = modifier
@@ -199,31 +209,28 @@ fun HomeScreen(
                     .filter { (it.activityType.contains("تسديد") || it.activityType.contains("Payment")) && (it.settlementType == SettlementType.FULL || it.settlementType == null) }
                     .sumOf { it.amount }
             }
-            val partialSettlementAmount = remember(periodTransactions) {
-                periodTransactions
-                    .filter { (it.activityType.contains("تسديد") || it.activityType.contains("Payment")) && it.settlementType == SettlementType.PARTIAL }
-                    .sumOf { it.amount }
-            }
             val debtAmount = if (selectedCustomer != null) selectedCustomer.balance else totalDebt
-            val totalActivity = debtAmount + cashSalesAmount + fullSettlementAmount + partialSettlementAmount
+            val totalActivity = debtAmount + cashSalesAmount + fullSettlementAmount
             val debtPercent = if (totalActivity > 0) ((debtAmount / totalActivity) * 100).roundToInt() else 0
             val cashPercent = if (totalActivity > 0) ((cashSalesAmount / totalActivity) * 100).roundToInt() else 0
-            val fullPercent = if (totalActivity > 0) ((fullSettlementAmount / totalActivity) * 100).roundToInt() else 0
-            val partialPercent = if (totalActivity > 0) (100 - debtPercent - cashPercent - fullPercent).coerceAtLeast(0) else 0
+            val fullPercent = if (totalActivity > 0) (100 - debtPercent - cashPercent).coerceAtLeast(0) else 0
 
-            val ringSegments = remember(debtPercent, cashPercent, fullPercent, partialPercent) {
+            val redColor = MaterialTheme.colorScheme.statusRed
+            val blueColor = MaterialTheme.colorScheme.statusBlue
+            val greenColor = MaterialTheme.colorScheme.statusGreen
+
+            val ringSegments = remember(debtPercent, cashPercent, fullPercent, redColor, blueColor, greenColor) {
                 listOf(
-                    DonutSegment(debtPercent.toFloat(), StatusRed),
-                    DonutSegment(cashPercent.toFloat(), StatusBlue),
-                    DonutSegment(fullPercent.toFloat(), StatusGreen),
-                    DonutSegment(partialPercent.toFloat(), StatusAmber)
+                    DonutSegment(debtPercent.toFloat(), redColor),
+                    DonutSegment(cashPercent.toFloat(), blueColor),
+                    DonutSegment(fullPercent.toFloat(), greenColor)
                 )
             }
 
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, GeoOutlineVariant),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -254,7 +261,7 @@ fun HomeScreen(
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 24.sp
                             ),
-                            color = StatusRed,
+                            color = MaterialTheme.colorScheme.statusRed,
                             modifier = Modifier.testTag("stat_total_debt")
                         )
                     }
@@ -284,32 +291,25 @@ fun HomeScreen(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     HomeStatLegendItem(
-                                        dotColor = StatusRed,
+                                        dotColor = MaterialTheme.colorScheme.statusRed,
                                         label = if (isArabic) StoreStrings.STAT_DEBT_CREDIT_AR else StoreStrings.STAT_DEBT_CREDIT_EN,
                                         amount = String.format(Locale.US, "%,.1f %s", debtAmount, currency),
                                         percentage = "$debtPercent%",
                                         testTag = "legend_debt_credit"
                                     )
                                     HomeStatLegendItem(
-                                        dotColor = StatusBlue,
+                                        dotColor = MaterialTheme.colorScheme.statusBlue,
                                         label = if (isArabic) StoreStrings.STAT_CASH_SALES_AR else StoreStrings.STAT_CASH_SALES_EN,
                                         amount = String.format(Locale.US, "%,.1f %s", cashSalesAmount, currency),
                                         percentage = "$cashPercent%",
                                         testTag = "legend_cash_sales"
                                     )
                                     HomeStatLegendItem(
-                                        dotColor = StatusGreen,
+                                        dotColor = MaterialTheme.colorScheme.statusGreen,
                                         label = if (isArabic) StoreStrings.STAT_PAYMENTS_RECEIVED_AR else StoreStrings.STAT_PAYMENTS_RECEIVED_EN,
                                         amount = String.format(Locale.US, "%,.1f %s", fullSettlementAmount, currency),
                                         percentage = "$fullPercent%",
                                         testTag = "legend_payment_full"
-                                    )
-                                    HomeStatLegendItem(
-                                        dotColor = StatusAmber,
-                                        label = if (isArabic) StoreStrings.STAT_INSTALLMENTS_AR else StoreStrings.STAT_INSTALLMENTS_EN,
-                                        amount = String.format(Locale.US, "%,.1f %s", partialSettlementAmount, currency),
-                                        percentage = "$partialPercent%",
-                                        testTag = "legend_installment_partial"
                                     )
                                 }
                             }
@@ -317,9 +317,16 @@ fun HomeScreen(
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            StoreDebtAgingSummaryCard(
+                summary = storeAgingSummary,
+                isArabic = isArabic
+            )
         }
 
-        HorizontalDivider(color = GeoOutline, thickness = 1.dp)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
 
         // SCROLLABLE LATEST ACTIVITIES LIST
         Column(
@@ -349,7 +356,7 @@ fun HomeScreen(
                     Text(
                         text = if (isArabic) "السجل الكامل" else "Complete History",
                         style = MaterialTheme.typography.bodySmall,
-                        color = GeoPrimary,
+                        color = MaterialTheme.colorScheme.primary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -363,7 +370,7 @@ fun HomeScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, GeoOutlineVariant, RoundedCornerShape(16.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
                 ) {
                     SimpleEmptyState(
                         message = if (isArabic) "لا توجد معاملات مسجلة." else "No activities recorded.",
@@ -404,9 +411,9 @@ private fun PeriodChip(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.surface,
+        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(10.dp),
-        border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, GeoOutline),
+        border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
@@ -420,7 +427,7 @@ private fun PeriodChip(
                 text = label,
                 fontSize = 11.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -568,11 +575,9 @@ private fun ActivityRowCard(
 ) {
     val isCredit = transaction.isCredit
     val isPayment = transaction.activityType == "تسديد" || transaction.activityType == "Payment"
-    val (badgeBg, badgeTint, iconVector) = if (isPayment || isCredit) {
-        Triple(StatusGreenBg, StatusGreen, Icons.Default.Add)
-    } else {
-        Triple(StatusRedBg, StatusRed, Icons.Default.Remove)
-    }
+    val badgeBg = if (isPayment || isCredit) MaterialTheme.colorScheme.statusGreenContainer else MaterialTheme.colorScheme.statusRedContainer
+    val badgeTint = if (isPayment || isCredit) MaterialTheme.colorScheme.statusGreen else MaterialTheme.colorScheme.statusRed
+    val iconVector = if (isPayment || isCredit) Icons.Default.Add else Icons.Default.Remove
 
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -580,7 +585,7 @@ private fun ActivityRowCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, GeoOutlineVariant, RoundedCornerShape(14.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
             .testTag("activity_row_${transaction.id}")
     ) {
         Row(
@@ -654,7 +659,7 @@ private fun ActivityRowCard(
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     ),
-                    color = if (isPayment || isCredit) StatusGreen else StatusRed
+                    color = if (isPayment || isCredit) MaterialTheme.colorScheme.statusGreen else MaterialTheme.colorScheme.statusRed
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(

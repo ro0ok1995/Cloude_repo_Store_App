@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AppCurrency
 import com.example.model.LanguageMode
 import com.example.model.StoreStrings
 
@@ -255,7 +256,7 @@ fun RecordTransactionSheet(
                 )
 
                 // Amount Field
-                FormFieldLabel(text = if (isArabic) "المبلغ (ر.س)" else "Amount (SAR)")
+                FormFieldLabel(text = if (isArabic) "المبلغ (${AppCurrency.SYMBOL})" else "Amount (${AppCurrency.SYMBOL})")
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it; errorText = null },
@@ -426,7 +427,7 @@ fun QuickPaymentSheet(
                 )
 
                 // Payment Amount
-                FormFieldLabel(text = if (isArabic) "مبلغ الدفعة (ر.س)" else "Payment Amount (SAR)")
+                FormFieldLabel(text = if (isArabic) "مبلغ الدفعة (${AppCurrency.SYMBOL})" else "Payment Amount (${AppCurrency.SYMBOL})")
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { amountText = it; errorText = null },

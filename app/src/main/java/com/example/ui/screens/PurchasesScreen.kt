@@ -83,6 +83,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AppCurrency
 import com.example.model.CartItem
 import com.example.model.CustomerAccount
 import com.example.model.LanguageMode
@@ -117,10 +118,11 @@ fun PurchasesScreen(
     onSelectCustomer: (CustomerAccount) -> Unit = {},
     onClearCustomer: () -> Unit = {},
     onCompleteTransaction: () -> Unit = {},
+    onCompleteTransactionWithItems: ((List<CartItem>) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
-    val currency = if (isArabic) "ر.س" else "SAR"
+    val currency = AppCurrency.SYMBOL
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -336,7 +338,11 @@ fun PurchasesScreen(
                         onClick = {
                             if (isCheckoutEnabled) {
                                 focusManager.clearFocus()
-                                onCompleteTransaction()
+                                if (onCompleteTransactionWithItems != null) {
+                                    onCompleteTransactionWithItems(cart)
+                                } else {
+                                    onCompleteTransaction()
+                                }
                                 coroutineScope.launch {
                                     snackbarHostState.showSnackbar(
                                         message = if (isArabic) "تم فتح المحاسبة للعميل ${customer?.customerName}" else "Opened transaction settlement for ${customer?.customerName}"
@@ -676,7 +682,7 @@ private fun CustomerSelectorCard(
                         Spacer(modifier = Modifier.height(2.dp))
                         if (selectedCustomer.balance > 0) {
                             Text(
-                                text = if (isArabic) "مدين بـ ${String.format(Locale.US, "%.2f ر.س", selectedCustomer.balance)}" else "Owes ${String.format(Locale.US, "%.2f SAR", selectedCustomer.balance)}",
+                                text = if (isArabic) "مدين بـ ${AppCurrency.formatAmountWithDecimals(selectedCustomer.balance, isArabic = true)}" else "Owes ${AppCurrency.formatAmountWithDecimals(selectedCustomer.balance, isArabic = false)}",
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = StatusRed
                             )

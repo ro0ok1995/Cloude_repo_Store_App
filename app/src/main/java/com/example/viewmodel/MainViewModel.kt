@@ -1,6 +1,14 @@
 package com.example.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.Context
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.backup.BackupManager
+import com.example.data.backup.BackupPayload
+import com.example.data.db.TransactionItemLineEntity
+import com.example.data.repository.StoreRepository
 import com.example.model.AccountFilter
 import com.example.model.AppThemeMode
 import com.example.model.CartItem
@@ -16,14 +24,15 @@ import com.example.model.SettlementType
 import com.example.model.StoreInfo
 import com.example.model.ThemeDisplayMode
 import com.example.model.TransactionItem
+import com.example.ui.components.SettlementContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.UUID
 
 data class MainUiState(
     val currentDestination: NavDestination = NavDestination.HOME,
@@ -32,16 +41,18 @@ data class MainUiState(
     val showActionSheet: Boolean = false,
     val showSettlementSheet: Boolean = false,
     val settlementTotal: Double = 0.0,
+    val settlementContext: SettlementContext = SettlementContext.RECORD_TRANSACTION,
 
     val languageMode: LanguageMode = LanguageMode.ARABIC,
     val themeMode: AppThemeMode = AppThemeMode.PURPLE,
     val displayMode: ThemeDisplayMode = ThemeDisplayMode.LIGHT,
     val storeInfo: StoreInfo = StoreInfo(),
 
-    val customers: List<CustomerAccount> = SampleData.sampleCustomers,
-    val transactions: List<TransactionItem> = SampleData.sampleTransactions,
-    val notifications: List<NotificationItem> = SampleData.sampleNotifications,
-    val products: List<ProductItem> = SampleData.sampleProducts,
+    val customers: List<CustomerAccount> = emptyList(),
+    val transactions: List<TransactionItem> = emptyList(),
+    val notifications: List<NotificationItem> = emptyList(),
+    val products: List<ProductItem> = emptyList(),
+    val transactionLines: List<com.example.data.db.TransactionItemLineEntity> = emptyList(),
 
     // Home screen state
     val homeSearchQuery: String = "",
@@ -62,18 +73,73 @@ data class MainUiState(
 
     // Quick Payment screen state
     val quickPaymentCustomer: CustomerAccount? = null,
-    val quickPaymentTotal: Double = 150.0,
-    val quickPaymentSettlementType: SettlementType = SettlementType.FULL,
-    val quickPaymentMethod: PaymentMethodOption = PaymentMethodOption.CASH,
-    val quickPaymentCashAmount: String = "150",
-    val quickPaymentDebtAmount: String = "0",
+    val quickPaymentAmount: String = "",
     val quickPaymentNotes: String = ""
 )
 
-class MainViewModel : ViewModel() {
+class MainViewModel @JvmOverloads constructor(
+    application: Application,
+    private val repository: StoreRepository = StoreRepository.getInstance(application)
+) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    // Backup & Restore conflict handling
+    val pendingRestorePayload = MutableStateFlow<BackupPayload?>(null)
+    val showRestoreConflictSheet = MutableStateFlow(false)
+
+    // StoreInfo status
+    val isStoreInfoSaved = MutableStateFlow<Boolean?>(null)
+    private var hasCheckedFirstLaunch = false
+
+    init {
+        viewModelScope.launch {
+            repository.seedIfEmpty()
+            val saved = repository.isStoreInfoSaved()
+            isStoreInfoSaved.value = saved
+            if (!saved && !hasCheckedFirstLaunch) {
+                hasCheckedFirstLaunch = true
+                _uiState.update { it.copy(currentDestination = NavDestination.STORE_INFORMATION) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.customers.collect { list ->
+                _uiState.update { it.copy(customers = list) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.transactions.collect { list ->
+                _uiState.update { it.copy(transactions = list) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.products.collect { list ->
+                _uiState.update { it.copy(products = list) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.notifications.collect { list ->
+                _uiState.update { it.copy(notifications = list) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.transactionLines.collect { list ->
+                _uiState.update { it.copy(transactionLines = list) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.storeInfo.collect { info ->
+                _uiState.update { it.copy(storeInfo = info) }
+            }
+        }
+    }
 
     // NAVIGATION
     fun navigateTo(destination: NavDestination) {
@@ -122,7 +188,23 @@ class MainViewModel : ViewModel() {
     }
 
     fun saveStoreInfo(info: StoreInfo) {
-        _uiState.update { it.copy(storeInfo = info) }
+        viewModelScope.launch {
+            val wasSaved = repository.isStoreInfoSaved()
+            repository.saveStoreInfo(info, markAsSaved = true)
+            isStoreInfoSaved.value = true
+            _uiState.update { current ->
+                val nextDest = if (!wasSaved && current.currentDestination == NavDestination.STORE_INFORMATION) {
+                    NavDestination.HOME
+                } else {
+                    current.currentDestination
+                }
+                current.copy(
+                    storeInfo = info,
+                    currentDestination = nextDest,
+                    activeBottomNav = if (nextDest == NavDestination.HOME) NavDestination.HOME else current.activeBottomNav
+                )
+            }
+        }
     }
 
     // HOME SCREEN
@@ -179,18 +261,16 @@ class MainViewModel : ViewModel() {
             totalDebt = initialDebt,
             hasRecentActivity = true
         )
-        _uiState.update {
-            it.copy(
-                customers = listOf(newCustomer) + it.customers,
-                showAddCustomerDialog = false
-            )
+        _uiState.update { it.copy(showAddCustomerDialog = false) }
+        viewModelScope.launch {
+            repository.addCustomer(newCustomer)
         }
     }
 
     // NOTIFICATIONS
     fun markNotificationsAsRead() {
-        _uiState.update { state ->
-            state.copy(notifications = state.notifications.map { it.copy(isRead = true) })
+        viewModelScope.launch {
+            repository.markNotificationsAsRead()
         }
     }
 
@@ -241,11 +321,12 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun openPurchasesSettlement() {
-        val total = _uiState.value.cart.sumOf { it.product.price * it.quantity }
+    fun openPurchasesSettlement(cartItems: List<CartItem> = _uiState.value.cart) {
+        val total = cartItems.sumOf { it.product.price * it.quantity }
         _uiState.update {
             it.copy(
                 settlementTotal = total,
+                settlementContext = SettlementContext.RECORD_TRANSACTION,
                 showSettlementSheet = true
             )
         }
@@ -260,92 +341,85 @@ class MainViewModel : ViewModel() {
         val customer = state.purchasesCustomer ?: state.customers.firstOrNull() ?: return
         val total = state.settlementTotal
         val isFullCash = debtAmount <= 0.01
+        val txId = "tx_${System.currentTimeMillis()}"
 
         val newTx = TransactionItem(
-            id = "tx_${System.currentTimeMillis()}",
+            id = txId,
             customerName = customer.customerName,
             activityType = if (isFullCash) "شراء كاش" else "شراء آجل",
             amount = total,
             relativeTime = "الآن",
             date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
             isCredit = !isFullCash,
-            notes = notes
+            notes = notes,
+            settlementType = if (isFullCash) SettlementType.FULL else SettlementType.PARTIAL
         )
 
-        val updatedCustomers = state.customers.map {
-            if (it.id == customer.id) {
-                it.copy(
-                    balance = it.balance + debtAmount,
-                    totalDebt = it.totalDebt + debtAmount,
-                    hasRecentActivity = true
-                )
-            } else it
+        val lines = state.cart.map { cartItem ->
+            TransactionItemLineEntity(
+                transactionId = txId,
+                productId = cartItem.product.id,
+                productNameSnapshot = cartItem.product.name,
+                quantity = cartItem.quantity,
+                unitPrice = cartItem.product.price,
+                costPrice = cartItem.product.costPrice,
+                subtotal = cartItem.product.price * cartItem.quantity
+            )
         }
+
+        val updatedCustomer = customer.copy(
+            balance = customer.balance + debtAmount,
+            totalDebt = customer.totalDebt + debtAmount,
+            hasRecentActivity = true
+        )
+
+        val notif = NotificationItem(
+            id = "notif_${System.currentTimeMillis()}",
+            customerName = customer.customerName,
+            transactionType = if (isFullCash) "شراء كاش" else "شراء آجل",
+            amount = total,
+            timestamp = "الآن",
+            isPayment = false,
+            isRead = false,
+            transactionId = txId
+        )
 
         _uiState.update {
             it.copy(
-                customers = updatedCustomers,
-                transactions = listOf(newTx) + it.transactions,
                 cart = emptyList(),
                 showSettlementSheet = false,
                 currentDestination = NavDestination.HOME,
                 activeBottomNav = NavDestination.HOME
             )
         }
+
+        viewModelScope.launch {
+            repository.addTransaction(newTx, lines)
+            repository.updateCustomer(updatedCustomer)
+            repository.addNotification(notif)
+        }
     }
 
     // QUICK PAYMENT
     fun openQuickPayment(customer: CustomerAccount? = null) {
-        val targetCustomer = customer ?: _uiState.value.customers.firstOrNull()
-        val defaultDebt = targetCustomer?.balance?.coerceAtLeast(50.0) ?: 100.0
         _uiState.update {
             it.copy(
-                quickPaymentCustomer = targetCustomer,
-                quickPaymentTotal = defaultDebt,
-                quickPaymentSettlementType = SettlementType.FULL,
-                quickPaymentMethod = PaymentMethodOption.CASH,
-                quickPaymentCashAmount = String.format(Locale.US, "%.0f", defaultDebt),
-                quickPaymentDebtAmount = "0",
+                quickPaymentCustomer = customer,
+                quickPaymentAmount = "",
                 quickPaymentNotes = "",
                 currentDestination = NavDestination.QUICK_PAYMENT
             )
         }
     }
 
-    fun setQuickPaymentCustomer(customer: CustomerAccount) {
-        val defaultDebt = customer.balance.coerceAtLeast(50.0)
+    fun setQuickPaymentCustomer(customer: CustomerAccount?) {
         _uiState.update {
-            it.copy(
-                quickPaymentCustomer = customer,
-                quickPaymentTotal = defaultDebt,
-                quickPaymentCashAmount = String.format(Locale.US, "%.0f", defaultDebt)
-            )
+            it.copy(quickPaymentCustomer = customer)
         }
     }
 
-    fun setQuickPaymentSettlementType(type: SettlementType) {
-        _uiState.update { it.copy(quickPaymentSettlementType = type) }
-    }
-
-    fun setQuickPaymentMethod(method: PaymentMethodOption) {
-        _uiState.update { state ->
-            val total = state.quickPaymentTotal
-            val cash = if (method == PaymentMethodOption.CASH) String.format(Locale.US, "%.0f", total) else "0"
-            val debt = if (method == PaymentMethodOption.DEBT) String.format(Locale.US, "%.0f", total) else "0"
-            state.copy(
-                quickPaymentMethod = method,
-                quickPaymentCashAmount = cash,
-                quickPaymentDebtAmount = debt
-            )
-        }
-    }
-
-    fun setQuickPaymentCashAmount(amt: String) {
-        _uiState.update { it.copy(quickPaymentCashAmount = amt) }
-    }
-
-    fun setQuickPaymentDebtAmount(amt: String) {
-        _uiState.update { it.copy(quickPaymentDebtAmount = amt) }
+    fun setQuickPaymentAmount(amt: String) {
+        _uiState.update { it.copy(quickPaymentAmount = amt) }
     }
 
     fun setQuickPaymentNotes(notes: String) {
@@ -355,49 +429,137 @@ class MainViewModel : ViewModel() {
     fun completeQuickPayment() {
         val state = _uiState.value
         val customer = state.quickPaymentCustomer ?: return
-        val cash = state.quickPaymentCashAmount.toDoubleOrNull() ?: 0.0
-        val debt = state.quickPaymentDebtAmount.toDoubleOrNull() ?: 0.0
-        val totalPaid = cash + debt
+        val amount = state.quickPaymentAmount.toDoubleOrNull() ?: return
+        if (amount <= 0.0 || amount > (customer.balance + 0.001)) return
 
+        val txId = "tx_${System.currentTimeMillis()}"
         val newTx = TransactionItem(
-            id = "tx_${System.currentTimeMillis()}",
+            id = txId,
             customerName = customer.customerName,
             activityType = "تسديد",
-            amount = totalPaid,
+            amount = amount,
             relativeTime = "الآن",
             date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
             isCredit = false,
             notes = state.quickPaymentNotes.ifBlank { "تسديد دفعة سريعة" },
-            settlementType = state.quickPaymentSettlementType
+            settlementType = null
         )
 
-        val updatedCustomers = state.customers.map {
-            if (it.id == customer.id) {
-                val newBal = (it.balance - totalPaid).coerceAtLeast(0.0)
-                it.copy(balance = newBal, hasRecentActivity = true)
-            } else it
-        }
+        val updatedCustomer = customer.copy(
+            balance = (customer.balance - amount).coerceAtLeast(0.0),
+            totalDebt = (customer.totalDebt - amount).coerceAtLeast(0.0),
+            hasRecentActivity = true
+        )
+
+        val newNotif = NotificationItem(
+            id = "notif_${System.currentTimeMillis()}",
+            customerName = customer.customerName,
+            transactionType = "تسديد",
+            amount = amount,
+            timestamp = "الآن",
+            isPayment = true,
+            isRead = false,
+            transactionId = txId
+        )
 
         _uiState.update {
             it.copy(
-                customers = updatedCustomers,
-                transactions = listOf(newTx) + it.transactions,
+                quickPaymentCustomer = null,
+                quickPaymentAmount = "",
+                quickPaymentNotes = "",
                 currentDestination = NavDestination.HOME,
                 activeBottomNav = NavDestination.HOME
             )
+        }
+
+        viewModelScope.launch {
+            repository.addTransaction(newTx)
+            repository.updateCustomer(updatedCustomer)
+            repository.addNotification(newNotif)
         }
     }
 
     fun resetData() {
         _uiState.update {
             it.copy(
-                customers = SampleData.sampleCustomers,
-                transactions = SampleData.sampleTransactions,
-                notifications = SampleData.sampleNotifications,
                 cart = emptyList(),
                 homeSelectedCustomer = null,
                 purchasesCustomer = null
             )
         }
+        viewModelScope.launch {
+            repository.resetDatabaseToSampleData()
+        }
+    }
+
+    // BACKUP & RESTORE
+    fun exportBackup(context: Context, uri: Uri, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val payload = repository.getAllDataForBackup()
+                val jsonString = BackupManager.serialize(payload)
+                val success = BackupManager.writeToUri(context.contentResolver, uri, jsonString)
+                onResult(success)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onResult(false)
+            }
+        }
+    }
+
+    fun prepareRestore(context: Context, uri: Uri, onError: () -> Unit, onSuccessSilent: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                val jsonString = BackupManager.readFromUri(context.contentResolver, uri)
+                if (jsonString.isNullOrBlank()) {
+                    onError()
+                    return@launch
+                }
+                val payload = BackupManager.deserialize(jsonString)
+                val currentInfo = repository.getStoreInfoSnapshot()
+
+                val differs = isStoreInfoDifferent(payload.storeInfoAtBackupTime, currentInfo)
+                if (differs) {
+                    pendingRestorePayload.value = payload
+                    showRestoreConflictSheet.value = true
+                } else {
+                    repository.restoreDataFromBackup(payload, replaceStoreInfo = false)
+                    pendingRestorePayload.value = null
+                    showRestoreConflictSheet.value = false
+                    onSuccessSilent()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onError()
+            }
+        }
+    }
+
+    fun confirmRestore(replaceStoreInfo: Boolean, onComplete: () -> Unit) {
+        val payload = pendingRestorePayload.value ?: return
+        viewModelScope.launch {
+            try {
+                repository.restoreDataFromBackup(payload, replaceStoreInfo = replaceStoreInfo)
+                onComplete()
+            } finally {
+                pendingRestorePayload.value = null
+                showRestoreConflictSheet.value = false
+            }
+        }
+    }
+
+    fun cancelRestore() {
+        pendingRestorePayload.value = null
+        showRestoreConflictSheet.value = false
+    }
+
+    private fun isStoreInfoDifferent(backup: StoreInfo, current: StoreInfo): Boolean {
+        return backup.storeName.trim() != current.storeName.trim() ||
+                backup.ownerName.trim() != current.ownerName.trim() ||
+                backup.phone.trim() != current.phone.trim() ||
+                backup.address.trim() != current.address.trim() ||
+                backup.taxNumber.trim() != current.taxNumber.trim() ||
+                backup.crNumber.trim() != current.crNumber.trim()
     }
 }
+

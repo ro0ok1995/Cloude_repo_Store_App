@@ -48,25 +48,35 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AppCurrency
+import com.example.model.CartItem
 import com.example.model.LanguageMode
 import com.example.model.StoreStrings
-import com.example.ui.theme.GeoOutline
-import com.example.ui.theme.GeoOutlineVariant
-import com.example.ui.theme.GeoPrimary
-import com.example.ui.theme.StatusGreen
-import com.example.ui.theme.StatusRed
+import com.example.ui.theme.statusGreen
+import com.example.ui.theme.statusRed
 import java.util.Locale
+
+/**
+ * Settlement mode/context for UnifiedSettlementSheet.
+ * Supports RECORD_TRANSACTION (from Purchases checkout) and QUICK_PAYMENT_LEGACY.
+ */
+enum class SettlementContext {
+    QUICK_PAYMENT_LEGACY,
+    RECORD_TRANSACTION
+}
 
 /**
  * UNIFIED SETTLEMENT dialog/bottom-sheet of SmallStore.
  * Generic, reusable version used both after "Complete Transaction" in Purchases
- * and after choosing amounts in Quick Payment.
+ * and for legacy quick payment settlements.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnifiedSettlementSheet(
     isOpen: Boolean,
     languageMode: LanguageMode = LanguageMode.ARABIC,
+    settlementContext: SettlementContext = SettlementContext.RECORD_TRANSACTION,
+    cartItems: List<CartItem> = emptyList(),
     transactionTotal: Double = 100.0,
     initialCashAmount: String = "50",
     initialDebtAmount: String = "40",
@@ -99,6 +109,8 @@ fun UnifiedSettlementSheet(
         ) {
             UnifiedSettlementSheetContent(
                 languageMode = languageMode,
+                settlementContext = settlementContext,
+                cartItems = cartItems,
                 transactionTotal = transactionTotal,
                 initialCashAmount = initialCashAmount,
                 initialDebtAmount = initialDebtAmount,
@@ -112,6 +124,8 @@ fun UnifiedSettlementSheet(
 @Composable
 fun UnifiedSettlementSheetContent(
     languageMode: LanguageMode = LanguageMode.ARABIC,
+    settlementContext: SettlementContext = SettlementContext.RECORD_TRANSACTION,
+    cartItems: List<CartItem> = emptyList(),
     transactionTotal: Double = 100.0,
     initialCashAmount: String = "50",
     initialDebtAmount: String = "40",
@@ -119,7 +133,7 @@ fun UnifiedSettlementSheetContent(
     onComplete: (cash: Double, debt: Double, notes: String) -> Unit = { _, _, _ -> }
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
-    val currency = if (isArabic) "ر.س" else "SAR"
+    val currency = AppCurrency.SYMBOL
     val focusManager = LocalFocusManager.current
 
     var cashAmountText by remember(initialCashAmount) { mutableStateOf(initialCashAmount) }
@@ -130,6 +144,15 @@ fun UnifiedSettlementSheetContent(
     val parsedDebt = debtAmountText.toDoubleOrNull() ?: 0.0
     val totalPaid = parsedCash + parsedDebt
     val remainingBalance = transactionTotal - totalPaid
+
+    val sheetTitle = when (settlementContext) {
+        SettlementContext.RECORD_TRANSACTION -> {
+            if (isArabic) "تسجيل المعاملة" else "Record Transaction"
+        }
+        SettlementContext.QUICK_PAYMENT_LEGACY -> {
+            if (isArabic) StoreStrings.SETTLEMENT_AR else StoreStrings.SETTLEMENT_EN
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -144,7 +167,7 @@ fun UnifiedSettlementSheetContent(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (isArabic) StoreStrings.SETTLEMENT_AR else StoreStrings.SETTLEMENT_EN,
+                text = sheetTitle,
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
@@ -155,7 +178,7 @@ fun UnifiedSettlementSheetContent(
         }
 
         HorizontalDivider(
-            color = GeoOutlineVariant,
+            color = MaterialTheme.colorScheme.outlineVariant,
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
 
@@ -173,7 +196,7 @@ fun UnifiedSettlementSheetContent(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 ),
-                border = androidx.compose.foundation.BorderStroke(1.dp, GeoOutlineVariant),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("settlement_transaction_total_card")
@@ -199,9 +222,79 @@ fun UnifiedSettlementSheetContent(
                             fontWeight = FontWeight.Bold,
                             fontSize = 30.sp
                         ),
-                        color = GeoPrimary,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.testTag("settlement_transaction_total")
                     )
+                }
+            }
+
+            // READ-ONLY PRODUCT LIST SUMMARY (Displayed at the TOP of the sheet, ABOVE the notes section, only in RECORD_TRANSACTION mode)
+            if (settlementContext == SettlementContext.RECORD_TRANSACTION && cartItems.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                SettlementFieldLabel(
+                    text = if (isArabic) "المنتجات المحددة (${cartItems.sumOf { it.quantity }})" else "Selected Products (${cartItems.sumOf { it.quantity }})"
+                )
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settlement_cart_items_card")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        cartItems.forEachIndexed { index, item ->
+                            if (index > 0) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("settlement_item_row_${item.product.id}"),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.product.name,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.testTag("settlement_item_name_${item.product.id}")
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${item.quantity} × ${String.format(Locale.US, "%.2f %s", item.product.price, currency)}",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        modifier = Modifier.testTag("settlement_item_qty_price_${item.product.id}")
+                                    )
+                                }
+                                Text(
+                                    text = String.format(Locale.US, "%.2f %s", item.product.price * item.quantity, currency),
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    ),
+                                    modifier = Modifier.testTag("settlement_item_subtotal_${item.product.id}")
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -227,8 +320,8 @@ fun UnifiedSettlementSheetContent(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = GeoPrimary,
-                    unfocusedBorderColor = GeoOutline,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface
                 ),
@@ -259,8 +352,8 @@ fun UnifiedSettlementSheetContent(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = GeoPrimary,
-                    unfocusedBorderColor = GeoOutline,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface
                 ),
@@ -277,7 +370,7 @@ fun UnifiedSettlementSheetContent(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                 ),
-                border = androidx.compose.foundation.BorderStroke(1.dp, GeoOutlineVariant),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("settlement_summary_card")
@@ -316,12 +409,12 @@ fun UnifiedSettlementSheetContent(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp
                             ),
-                            color = StatusGreen
+                            color = MaterialTheme.colorScheme.statusGreen
                         )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
-                    HorizontalDivider(color = GeoOutlineVariant)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Line 2: Remaining Balance = Transaction Total - Total Paid
@@ -353,7 +446,7 @@ fun UnifiedSettlementSheetContent(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp
                             ),
-                            color = if (remainingBalance > 0) StatusRed else StatusGreen
+                            color = if (remainingBalance > 0) MaterialTheme.colorScheme.statusRed else MaterialTheme.colorScheme.statusGreen
                         )
                     }
                 }
@@ -378,8 +471,8 @@ fun UnifiedSettlementSheetContent(
                 maxLines = 3,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = GeoPrimary,
-                    unfocusedBorderColor = GeoOutline,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface
                 ),
@@ -410,8 +503,8 @@ fun UnifiedSettlementSheetContent(
                         onComplete(parsedCash, parsedDebt, notesText.trim())
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GeoPrimary,
-                        contentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier

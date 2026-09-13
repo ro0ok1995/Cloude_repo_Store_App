@@ -1,6 +1,7 @@
 package com.example
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -20,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -35,11 +37,14 @@ import com.example.ui.components.GlobalBottomBar
 import com.example.ui.components.GlobalDrawerContent
 import com.example.ui.components.GlobalTopBar
 import com.example.ui.components.PlusActionSheet
+import com.example.ui.components.StoreInfoConflictSheet
 import com.example.ui.components.UnifiedSettlementSheet
 import com.example.ui.screens.AboutAppScreen
 import com.example.ui.screens.AccountsScreen
 import com.example.ui.screens.AnalysisCenterScreen
 import com.example.ui.screens.AppSettingsScreen
+import com.example.ui.screens.ContactSupportScreen
+import com.example.ui.screens.CustomerProfileScreen
 import com.example.ui.screens.DataCenterScreen
 import com.example.ui.screens.GenericContentScreen
 import com.example.ui.screens.HomeScreen
@@ -50,6 +55,7 @@ import com.example.ui.screens.QuickPaymentScreen
 import com.example.ui.screens.StoreInformationScreen
 import com.example.ui.theme.SmallStoreTheme
 import com.example.viewmodel.AnalysisCenterViewModel
+import com.example.viewmodel.AnalysisTab
 import com.example.viewmodel.MainViewModel
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -70,6 +76,7 @@ fun SmallStoreApp(
     analysisViewModel: AnalysisCenterViewModel = viewModel()
 ) {
     val uiState by mainViewModel.uiState.collectAsState()
+    val analysisUiState by analysisViewModel.uiState.collectAsState()
     val isArabic = uiState.languageMode == LanguageMode.ARABIC
     val layoutDirection = if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -91,6 +98,12 @@ fun SmallStoreApp(
         if (drawerState.isOpen) {
             coroutineScope.launch { drawerState.close() }
             mainViewModel.closeDrawer()
+        } else if (uiState.currentDestination == NavDestination.CUSTOMER_DETAILS) {
+            mainViewModel.navigateTo(NavDestination.ACCOUNTS)
+        } else if (uiState.currentDestination in listOf(NavDestination.PRIVACY_POLICY, NavDestination.TERMS_OF_USE, NavDestination.CONTACT_SUPPORT)) {
+            mainViewModel.navigateTo(NavDestination.ABOUT)
+        } else if (uiState.currentDestination in listOf(NavDestination.ABOUT, NavDestination.STORE_INFORMATION, NavDestination.APP_SETTINGS, NavDestination.DATA_CENTER)) {
+            mainViewModel.navigateTo(NavDestination.MORE)
         } else if (uiState.currentDestination != NavDestination.HOME) {
             mainViewModel.navigateTo(NavDestination.HOME)
         }
@@ -112,9 +125,26 @@ fun SmallStoreApp(
                         unreadNotificationsCount = unreadNotifications,
                         storeName = uiState.storeInfo.storeName,
                         storeOwnerName = uiState.storeInfo.ownerName,
+                        currentAnalysisTab = analysisUiState.currentTab,
+                        selectedCustomer = uiState.accountsSelectedCustomerDetails,
+                        allCustomers = uiState.customers,
                         onSelectDestination = { dest ->
                             focusManager.clearFocus()
                             mainViewModel.navigateTo(dest)
+                            coroutineScope.launch { drawerState.close() }
+                            mainViewModel.closeDrawer()
+                        },
+                        onSelectAnalysisTab = { tab ->
+                            analysisViewModel.selectTab(tab)
+                            focusManager.clearFocus()
+                            mainViewModel.navigateTo(NavDestination.ANALYSIS_CENTER)
+                            coroutineScope.launch { drawerState.close() }
+                            mainViewModel.closeDrawer()
+                        },
+                        onSelectCustomerForProfile = { customer ->
+                            mainViewModel.selectCustomerDetails(customer)
+                            focusManager.clearFocus()
+                            mainViewModel.navigateTo(NavDestination.CUSTOMER_DETAILS)
                             coroutineScope.launch { drawerState.close() }
                             mainViewModel.closeDrawer()
                         },
@@ -138,7 +168,8 @@ fun SmallStoreApp(
                 val storeOwnerName = uiState.storeInfo.ownerName.ifBlank { uiState.storeInfo.storeName }
                 val screenTitle = when (uiState.currentDestination) {
                     NavDestination.HOME -> if (isArabic) "مرحباً بك، $storeOwnerName" else "Welcome, $storeOwnerName"
-                    NavDestination.ACCOUNTS, NavDestination.CUSTOMER_DETAILS -> if (isArabic) StoreStrings.ACCOUNTS_AR else StoreStrings.ACCOUNTS_EN
+                    NavDestination.ACCOUNTS -> if (isArabic) StoreStrings.ACCOUNTS_AR else StoreStrings.ACCOUNTS_EN
+                    NavDestination.CUSTOMER_DETAILS -> if (isArabic) StoreStrings.CUSTOMER_PROFILE_AR else StoreStrings.CUSTOMER_PROFILE_EN
                     NavDestination.ANALYSIS_CENTER -> if (isArabic) StoreStrings.ANALYSIS_CENTER_AR else StoreStrings.ANALYSIS_CENTER_EN
                     NavDestination.MORE, NavDestination.MORE_SETTINGS -> if (isArabic) StoreStrings.MORE_AR else StoreStrings.MORE_EN
                     NavDestination.PURCHASES -> if (isArabic) StoreStrings.PURCHASES_AR else StoreStrings.PURCHASES_EN
@@ -227,6 +258,7 @@ fun SmallStoreApp(
                                     transactions = displayedTxs,
                                     matchingCustomers = matching,
                                     allCustomers = uiState.customers,
+                                    allTransactions = uiState.transactions,
                                     selectedCustomer = uiState.homeSelectedCustomer,
                                     searchQuery = uiState.homeSearchQuery,
                                     selectedPeriod = uiState.homeSelectedPeriod,
@@ -238,8 +270,7 @@ fun SmallStoreApp(
                                 )
                             }
 
-                            NavDestination.ACCOUNTS,
-                            NavDestination.CUSTOMER_DETAILS -> {
+                            NavDestination.ACCOUNTS -> {
                                 val filteredAccounts = remember(uiState.customers, uiState.accountsSearchQuery, uiState.accountsFilter) {
                                     var list = uiState.customers
                                     if (uiState.accountsSearchQuery.isNotBlank()) {
@@ -264,11 +295,39 @@ fun SmallStoreApp(
                                     languageMode = uiState.languageMode,
                                     onSearchQueryChange = { mainViewModel.setAccountsSearchQuery(it) },
                                     onFilterChange = { mainViewModel.setAccountsFilter(it) },
-                                    onCustomerClick = { mainViewModel.selectCustomerDetails(it) },
-                                    onCloseCustomerDetails = { mainViewModel.selectCustomerDetails(null) },
+                                    onCustomerClick = { customer ->
+                                        mainViewModel.selectCustomerDetails(customer)
+                                        mainViewModel.navigateTo(NavDestination.CUSTOMER_DETAILS)
+                                    },
                                     onOpenAddCustomerDialog = { mainViewModel.openAddCustomerDialog() },
                                     onCloseAddCustomerDialog = { mainViewModel.closeAddCustomerDialog() },
                                     onAddCustomer = { name, phone, debt -> mainViewModel.addCustomer(name, phone, debt) }
+                                )
+                            }
+
+                            NavDestination.CUSTOMER_DETAILS -> {
+                                CustomerProfileScreen(
+                                    customer = uiState.accountsSelectedCustomerDetails,
+                                    allCustomers = uiState.customers,
+                                    languageMode = uiState.languageMode,
+                                    onBackClick = {
+                                        mainViewModel.navigateTo(NavDestination.ACCOUNTS)
+                                    },
+                                    onCustomerSelected = { customer ->
+                                        mainViewModel.selectCustomerDetails(customer)
+                                    },
+                                    onRecordPurchase = { customer ->
+                                        mainViewModel.setPurchasesCustomer(customer)
+                                        mainViewModel.navigateTo(NavDestination.PURCHASES)
+                                    },
+                                    onViewAccountStatement = { customer ->
+                                        analysisViewModel.selectTab(AnalysisTab.ACCOUNT_STATEMENT)
+                                        analysisViewModel.selectCustomer(customer)
+                                        mainViewModel.navigateTo(NavDestination.ANALYSIS_CENTER)
+                                    },
+                                    onRecordPayment = { customer ->
+                                        mainViewModel.openQuickPayment(customer)
+                                    }
                                 )
                             }
 
@@ -278,6 +337,8 @@ fun SmallStoreApp(
                                     customers = uiState.customers,
                                     transactions = uiState.transactions,
                                     storeInfo = uiState.storeInfo,
+                                    products = uiState.products,
+                                    transactionLines = uiState.transactionLines,
                                     languageMode = uiState.languageMode
                                 )
                             }
@@ -314,7 +375,8 @@ fun SmallStoreApp(
                                     onToggleCartExpanded = { mainViewModel.toggleCartExpanded() },
                                     onSelectCustomer = { mainViewModel.setPurchasesCustomer(it) },
                                     onClearCustomer = { mainViewModel.setPurchasesCustomer(null) },
-                                    onCompleteTransaction = { mainViewModel.openPurchasesSettlement() }
+                                    onCompleteTransaction = { mainViewModel.openPurchasesSettlement() },
+                                    onCompleteTransactionWithItems = { items -> mainViewModel.openPurchasesSettlement(items) }
                                 )
                             }
 
@@ -322,11 +384,7 @@ fun SmallStoreApp(
                                 QuickPaymentScreen(
                                     customer = uiState.quickPaymentCustomer,
                                     allCustomers = uiState.customers,
-                                    transactionTotal = uiState.quickPaymentTotal,
-                                    settlementType = uiState.quickPaymentSettlementType,
-                                    paymentMethod = uiState.quickPaymentMethod,
-                                    cashAmount = uiState.quickPaymentCashAmount,
-                                    debtAmount = uiState.quickPaymentDebtAmount,
+                                    amount = uiState.quickPaymentAmount,
                                     notes = uiState.quickPaymentNotes,
                                     languageMode = uiState.languageMode,
                                     onBackClick = {
@@ -334,10 +392,7 @@ fun SmallStoreApp(
                                         mainViewModel.navigateTo(NavDestination.HOME)
                                     },
                                     onCustomerChange = { mainViewModel.setQuickPaymentCustomer(it) },
-                                    onSettlementTypeChange = { mainViewModel.setQuickPaymentSettlementType(it) },
-                                    onPaymentMethodChange = { mainViewModel.setQuickPaymentMethod(it) },
-                                    onCashAmountChange = { mainViewModel.setQuickPaymentCashAmount(it) },
-                                    onDebtAmountChange = { mainViewModel.setQuickPaymentDebtAmount(it) },
+                                    onAmountChange = { mainViewModel.setQuickPaymentAmount(it) },
                                     onNotesChange = { mainViewModel.setQuickPaymentNotes(it) },
                                     onComplete = { mainViewModel.completeQuickPayment() }
                                 )
@@ -357,12 +412,15 @@ fun SmallStoreApp(
                             }
 
                             NavDestination.STORE_INFORMATION -> {
+                                val isStoreSaved by mainViewModel.isStoreInfoSaved.collectAsState()
                                 StoreInformationScreen(
                                     storeInfo = uiState.storeInfo,
                                     languageMode = uiState.languageMode,
                                     onBackClick = {
                                         focusManager.clearFocus()
-                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                        if (isStoreSaved == true) {
+                                            mainViewModel.navigateTo(NavDestination.MORE)
+                                        }
                                     },
                                     onSaveStoreInfo = { mainViewModel.saveStoreInfo(it) }
                                 )
@@ -384,19 +442,48 @@ fun SmallStoreApp(
                             }
 
                             NavDestination.DATA_CENTER -> {
+                                val context = LocalContext.current
                                 DataCenterScreen(
                                     languageMode = uiState.languageMode,
                                     onBackClick = {
                                         focusManager.clearFocus()
                                         mainViewModel.navigateTo(NavDestination.MORE)
                                     },
-                                    onResetData = { mainViewModel.resetData() }
+                                    onResetData = { mainViewModel.resetData() },
+                                    onExportBackup = { uri ->
+                                        mainViewModel.exportBackup(context, uri) { success ->
+                                            val msg = if (success) {
+                                                if (isArabic) "تم حفظ النسخة الاحتياطية بنجاح" else "Backup saved successfully"
+                                            } else {
+                                                if (isArabic) "فشل حفظ النسخة الاحتياطية" else "Failed to save backup"
+                                            }
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onImportBackup = { uri ->
+                                        mainViewModel.prepareRestore(
+                                            context = context,
+                                            uri = uri,
+                                            onError = {
+                                                val msg = if (isArabic) "الملف غير صالح أو تعذرت قراءته" else "Invalid backup file or failed to read"
+                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                            },
+                                            onSuccessSilent = {
+                                                val msg = if (isArabic) "تم استعادة البيانات بنجاح" else "Data restored successfully"
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
                                 )
                             }
 
                             NavDestination.ABOUT -> {
                                 AboutAppScreen(
                                     languageMode = uiState.languageMode,
+                                    onNavigate = { dest ->
+                                        focusManager.clearFocus()
+                                        mainViewModel.navigateTo(dest)
+                                    },
                                     onBackClick = {
                                         focusManager.clearFocus()
                                         mainViewModel.navigateTo(NavDestination.MORE)
@@ -414,7 +501,7 @@ fun SmallStoreApp(
                                     },
                                     onBackClick = {
                                         focusManager.clearFocus()
-                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                        mainViewModel.navigateTo(NavDestination.ABOUT)
                                     },
                                     testTag = "screen_privacy"
                                 )
@@ -430,18 +517,18 @@ fun SmallStoreApp(
                                     },
                                     onBackClick = {
                                         focusManager.clearFocus()
-                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                        mainViewModel.navigateTo(NavDestination.ABOUT)
                                     },
                                     testTag = "screen_terms"
                                 )
                             }
 
                             NavDestination.CONTACT_SUPPORT -> {
-                                AboutAppScreen(
+                                ContactSupportScreen(
                                     languageMode = uiState.languageMode,
                                     onBackClick = {
                                         focusManager.clearFocus()
-                                        mainViewModel.navigateTo(NavDestination.MORE)
+                                        mainViewModel.navigateTo(NavDestination.ABOUT)
                                     }
                                 )
                             }
@@ -473,6 +560,8 @@ fun SmallStoreApp(
                 UnifiedSettlementSheet(
                     isOpen = uiState.showSettlementSheet,
                     languageMode = uiState.languageMode,
+                    settlementContext = uiState.settlementContext,
+                    cartItems = uiState.cart,
                     transactionTotal = uiState.settlementTotal,
                     initialCashAmount = String.format(Locale.US, "%.0f", uiState.settlementTotal),
                     initialDebtAmount = "0",
@@ -485,6 +574,29 @@ fun SmallStoreApp(
                         mainViewModel.completeSettlement(cash, debt, notes)
                     }
                 )
+
+                // Store Info Backup Conflict Sheet
+                val pendingPayload by mainViewModel.pendingRestorePayload.collectAsState()
+                val showConflictSheet by mainViewModel.showRestoreConflictSheet.collectAsState()
+
+                if (showConflictSheet && pendingPayload != null) {
+                    val context = LocalContext.current
+                    StoreInfoConflictSheet(
+                        isOpen = true,
+                        currentStoreInfo = uiState.storeInfo,
+                        backupStoreInfo = pendingPayload!!.storeInfoAtBackupTime,
+                        languageMode = uiState.languageMode,
+                        onConfirm = { replaceStoreInfo ->
+                            mainViewModel.confirmRestore(replaceStoreInfo) {
+                                val msg = if (isArabic) "تم استعادة البيانات بنجاح" else "Data restored successfully"
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onDismiss = {
+                            mainViewModel.cancelRestore()
+                        }
+                    )
+                }
             }
         }
     }

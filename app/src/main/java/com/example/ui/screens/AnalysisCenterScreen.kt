@@ -30,18 +30,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Warning
@@ -50,6 +50,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -57,8 +60,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -80,21 +82,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AppCurrency
 import com.example.model.CustomerAccount
 import com.example.model.LanguageMode
 import com.example.model.PeriodFilter
+import com.example.model.ProductItem
 import com.example.model.SettlementType
 import com.example.model.StoreInfo
 import com.example.model.StoreStrings
 import com.example.model.TransactionItem
+import com.example.data.db.TransactionItemLineEntity
+import com.example.ui.components.BreakdownChartItem
+import com.example.ui.components.BreakdownChartTabButton
+import com.example.ui.components.BreakdownChartType
+import com.example.ui.components.BreakdownColumnChart
+import com.example.ui.components.BreakdownComboChart
+import com.example.ui.components.CustomerSelectorField
 import com.example.ui.components.SimpleEmptyState
 import com.example.ui.theme.GeoOutline
 import com.example.ui.theme.GeoOutlineVariant
@@ -111,8 +119,15 @@ import com.example.util.StatementRow
 import com.example.viewmodel.AnalysisCenterUiState
 import com.example.viewmodel.AnalysisCenterViewModel
 import com.example.viewmodel.AnalysisTab
+import com.example.viewmodel.CustomerDebtAgingResult
+import com.example.viewmodel.DateFilterUtils
+import com.example.viewmodel.DebtAgingUtils
 import com.example.viewmodel.ReportType
 import com.example.viewmodel.StatementTxFilter
+import com.example.viewmodel.TransactionAgingDetail
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -122,31 +137,29 @@ fun AnalysisCenterScreen(
     customers: List<CustomerAccount>,
     transactions: List<TransactionItem>,
     storeInfo: StoreInfo,
+    products: List<ProductItem> = emptyList(),
+    transactionLines: List<TransactionItemLineEntity> = emptyList(),
     languageMode: LanguageMode,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val isArabic = languageMode == LanguageMode.ARABIC
-    val currency = if (isArabic) "ر.س" else "SAR"
+    val currency = AppCurrency.SYMBOL
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
-    var showCustomerDialog by remember { mutableStateOf(false) }
-
     // Calculate active period based on lock state
     val activePeriod = viewModel.getActivePeriod()
+    val (activeStartDate, activeEndDate) = viewModel.getActiveDateRange()
 
-    // Progressive disclosure checks:
-    // Period selector: shown for Statistics and Account Statement, and for Reports ONLY when Comprehensive Customer report is active.
-    val shouldShowPeriodSelector = when (uiState.currentTab) {
-        AnalysisTab.STATISTICS, AnalysisTab.ACCOUNT_STATEMENT -> true
-        AnalysisTab.REPORTS -> uiState.selectedReportType == ReportType.COMPREHENSIVE_CUSTOMER
-    }
+    // Period selector is available across all tabs to filter real data dynamically
+    val shouldShowPeriodSelector = true
 
-    // Customer selector: shown on Statistics and Account Statement, and conditionally on Reports for Comprehensive Customer report.
+    // Customer selector: shown on Statistics and Account Statement header.
+    // For Reports, it is rendered BELOW the 4 report tiles inside the Reports tab only when Comprehensive Customer is selected.
     val shouldShowCustomerSelector = when (uiState.currentTab) {
         AnalysisTab.STATISTICS, AnalysisTab.ACCOUNT_STATEMENT -> true
-        AnalysisTab.REPORTS -> uiState.selectedReportType == ReportType.COMPREHENSIVE_CUSTOMER
+        AnalysisTab.REPORTS -> false
     }
 
     Column(
@@ -234,28 +247,42 @@ fun AnalysisCenterScreen(
                 if (shouldShowPeriodSelector) {
                     PeriodSelectorLockableRow(
                         selectedPeriod = activePeriod,
+                        customStartDate = activeStartDate,
+                        customEndDate = activeEndDate,
                         isLocked = uiState.isPeriodLocked,
                         isArabic = isArabic,
                         onSelectPeriod = { viewModel.selectPeriod(it) },
+                        onOpenDatePicker = { viewModel.openCustomDatePicker() },
                         onToggleLock = { viewModel.togglePeriodLock() }
                     )
                 }
 
                 // 3. SHARED CUSTOMER CONTEXT SELECTOR (Progressive disclosure)
                 if (shouldShowCustomerSelector) {
-                    CustomerContextBar(
-                        selectedCustomer = uiState.selectedCustomer,
-                        isArabic = isArabic,
-                        isRequired = uiState.currentTab == AnalysisTab.REPORTS && uiState.selectedReportType == ReportType.COMPREHENSIVE_CUSTOMER,
-                        onClickSelect = {
-                            focusManager.clearFocus()
-                            showCustomerDialog = true
-                        },
-                        onClear = {
-                            focusManager.clearFocus()
-                            viewModel.clearCustomer()
-                        }
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        CustomerSelectorField(
+                            customers = customers,
+                            selectedCustomer = uiState.selectedCustomer,
+                            onCustomerSelected = { cust ->
+                                focusManager.clearFocus()
+                                if (cust != null) {
+                                    viewModel.selectCustomer(cust)
+                                } else {
+                                    viewModel.clearCustomer()
+                                }
+                            },
+                            isArabic = isArabic,
+                            isRequired = uiState.currentTab == AnalysisTab.REPORTS && uiState.selectedReportType == ReportType.COMPREHENSIVE_CUSTOMER,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("customer_context_bar"),
+                            testTag = "analysis_customer_selector"
+                        )
+                    }
                 }
             }
         }
@@ -272,6 +299,8 @@ fun AnalysisCenterScreen(
                         transactions = transactions,
                         selectedCustomer = uiState.selectedCustomer,
                         activePeriod = activePeriod,
+                        customStartDate = activeStartDate,
+                        customEndDate = activeEndDate,
                         currency = currency,
                         isArabic = isArabic,
                         context = context,
@@ -282,12 +311,13 @@ fun AnalysisCenterScreen(
                     AccountStatementTabContent(
                         viewModel = viewModel,
                         uiState = uiState,
+                        customers = customers,
                         allTransactions = transactions,
                         activePeriod = activePeriod,
+                        customStartDate = activeStartDate,
+                        customEndDate = activeEndDate,
                         currency = currency,
-                        isArabic = isArabic,
-                        context = context,
-                        storeInfo = storeInfo
+                        isArabic = isArabic
                     )
                 }
                 AnalysisTab.REPORTS -> {
@@ -296,46 +326,49 @@ fun AnalysisCenterScreen(
                         uiState = uiState,
                         customers = customers,
                         allTransactions = transactions,
+                        products = products,
+                        transactionLines = transactionLines,
                         activePeriod = activePeriod,
+                        customStartDate = activeStartDate,
+                        customEndDate = activeEndDate,
                         currency = currency,
                         isArabic = isArabic,
                         context = context,
-                        storeInfo = storeInfo,
-                        onSelectCustomerRequest = { showCustomerDialog = true }
+                        storeInfo = storeInfo
                     )
                 }
             }
         }
     }
 
-    // Customer Selection Dialog
-    if (showCustomerDialog) {
-        CustomerPickerModal(
-            customers = customers,
-            selectedCustomerId = uiState.selectedCustomer?.id,
+    // 5. CUSTOM DATE RANGE PICKER DIALOG
+    if (uiState.showCustomDatePicker) {
+        CustomDateRangePickerDialog(
+            initialStartDate = activeStartDate,
+            initialEndDate = activeEndDate,
             isArabic = isArabic,
-            onDismiss = { showCustomerDialog = false },
-            onSelect = {
-                viewModel.selectCustomer(it)
-                showCustomerDialog = false
+            onConfirm = { start, end ->
+                viewModel.setCustomDateRange(start, end)
             },
-            onSelectAll = {
-                viewModel.clearCustomer()
-                showCustomerDialog = false
+            onDismiss = {
+                viewModel.dismissCustomDatePicker()
             }
         )
     }
 }
 
 // -------------------------------------------------------------
-// PERIOD SELECTOR WITH LOCK/UNLOCK TOGGLE
+// PERIOD SELECTOR WITH LOCK/UNLOCK TOGGLE & CUSTOM RANGE
 // -------------------------------------------------------------
 @Composable
 private fun PeriodSelectorLockableRow(
     selectedPeriod: PeriodFilter,
+    customStartDate: LocalDate?,
+    customEndDate: LocalDate?,
     isLocked: Boolean,
     isArabic: Boolean,
     onSelectPeriod: (PeriodFilter) -> Unit,
+    onOpenDatePicker: () -> Unit,
     onToggleLock: () -> Unit
 ) {
     Surface(
@@ -344,60 +377,427 @@ private fun PeriodSelectorLockableRow(
             .fillMaxWidth()
             .testTag("period_selector_container")
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            // Period Chips
-            PeriodSelectorChip(
-                label = if (isArabic) StoreStrings.PERIOD_TODAY_AR else StoreStrings.PERIOD_TODAY_EN,
-                isSelected = selectedPeriod == PeriodFilter.TODAY,
-                testTag = "period_chip_today",
-                onClick = { onSelectPeriod(PeriodFilter.TODAY) },
-                modifier = Modifier.weight(1f)
-            )
-            PeriodSelectorChip(
-                label = if (isArabic) StoreStrings.PERIOD_WEEK_AR else StoreStrings.PERIOD_WEEK_EN,
-                isSelected = selectedPeriod == PeriodFilter.WEEK,
-                testTag = "period_chip_week",
-                onClick = { onSelectPeriod(PeriodFilter.WEEK) },
-                modifier = Modifier.weight(1f)
-            )
-            PeriodSelectorChip(
-                label = if (isArabic) StoreStrings.PERIOD_MONTH_AR else StoreStrings.PERIOD_MONTH_EN,
-                isSelected = selectedPeriod == PeriodFilter.MONTH,
-                testTag = "period_chip_month",
-                onClick = { onSelectPeriod(PeriodFilter.MONTH) },
-                modifier = Modifier.weight(1f)
-            )
-
-            // Lock / Unlock Toggle Button
-            IconButton(
-                onClick = onToggleLock,
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        if (isLocked) GeoPrimary.copy(alpha = 0.12f)
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    .testTag("period_lock_toggle")
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(
-                    imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                    contentDescription = if (isLocked) {
-                        if (isArabic) "الفترة مقفلة وموحدة عبر التبويبات" else "Locked: Period is shared across tabs"
-                    } else {
-                        if (isArabic) "الفترة غير مقفلة ومستقلة لكل تبويب" else "Unlocked: Period is independent per tab"
-                    },
-                    tint = if (isLocked) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
+                // Period Chips
+                PeriodSelectorChip(
+                    label = if (isArabic) StoreStrings.PERIOD_TODAY_AR else StoreStrings.PERIOD_TODAY_EN,
+                    isSelected = selectedPeriod == PeriodFilter.TODAY,
+                    testTag = "period_chip_today",
+                    onClick = { onSelectPeriod(PeriodFilter.TODAY) },
+                    modifier = Modifier.weight(1f)
                 )
+                PeriodSelectorChip(
+                    label = if (isArabic) StoreStrings.PERIOD_WEEK_AR else StoreStrings.PERIOD_WEEK_EN,
+                    isSelected = selectedPeriod == PeriodFilter.WEEK,
+                    testTag = "period_chip_week",
+                    onClick = { onSelectPeriod(PeriodFilter.WEEK) },
+                    modifier = Modifier.weight(1f)
+                )
+                PeriodSelectorChip(
+                    label = if (isArabic) StoreStrings.PERIOD_MONTH_AR else StoreStrings.PERIOD_MONTH_EN,
+                    isSelected = selectedPeriod == PeriodFilter.MONTH,
+                    testTag = "period_chip_month",
+                    onClick = { onSelectPeriod(PeriodFilter.MONTH) },
+                    modifier = Modifier.weight(1f)
+                )
+                PeriodSelectorChip(
+                    label = if (isArabic) StoreStrings.PERIOD_CUSTOM_AR else StoreStrings.PERIOD_CUSTOM_EN,
+                    isSelected = selectedPeriod == PeriodFilter.CUSTOM,
+                    testTag = "period_chip_custom",
+                    onClick = { onSelectPeriod(PeriodFilter.CUSTOM) },
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Lock / Unlock Toggle Button
+                IconButton(
+                    onClick = onToggleLock,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (isLocked) GeoPrimary.copy(alpha = 0.12f)
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        .testTag("period_lock_toggle")
+                ) {
+                    Icon(
+                        imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                        contentDescription = if (isLocked) {
+                            if (isArabic) "الفترة مقفلة وموحدة عبر التبويبات" else "Locked: Period is shared across tabs"
+                        } else {
+                            if (isArabic) "الفترة غير مقفلة ومستقلة لكل تبويب" else "Unlocked: Period is independent per tab"
+                        },
+                        tint = if (isLocked) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // If CUSTOM is selected, show the date range badge with edit button
+            if (selectedPeriod == PeriodFilter.CUSTOM) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, GeoOutlineVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 14.dp, end = 14.dp, bottom = 8.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onOpenDatePicker() }
+                        .testTag("custom_date_range_display")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DateRange,
+                                contentDescription = null,
+                                tint = GeoPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            val rangeText = if (customStartDate != null && customEndDate != null) {
+                                "$customStartDate  ←  $customEndDate"
+                            } else if (customStartDate != null) {
+                                if (isArabic) "من $customStartDate" else "From $customStartDate"
+                            } else if (customEndDate != null) {
+                                if (isArabic) "إلى $customEndDate" else "To $customEndDate"
+                            } else {
+                                if (isArabic) "اضغط لتحديد نطاق التاريخ" else "Tap to select date range"
+                            }
+                            Text(
+                                text = rangeText,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.testTag("custom_date_range_text")
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = if (isArabic) "تعديل التاريخ" else "Edit Date Range",
+                            tint = GeoPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun PresetChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(8.dp),
+        border = if (isSelected) null else BorderStroke(1.dp, GeoOutlineVariant),
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier.padding(vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SingleDatePickerModal(
+    initialDate: LocalDate?,
+    title: String,
+    onDateSelected: (LocalDate) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val initialMillis = remember(initialDate) {
+        (initialDate ?: LocalDate.now()).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    }
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialMillis
+    )
+
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val selected = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                        onDateSelected(selected)
+                    }
+                    onDismiss()
+                }
+            ) {
+                Text(text = "تأكيد")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "إلغاء")
+            }
+        }
+    ) {
+        DatePicker(state = datePickerState)
+    }
+}
+
+@Composable
+fun CustomDateRangePickerDialog(
+    initialStartDate: LocalDate?,
+    initialEndDate: LocalDate?,
+    isArabic: Boolean,
+    onConfirm: (LocalDate?, LocalDate?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val today = remember { LocalDate.now() }
+    var startDate by remember(initialStartDate) { mutableStateOf(initialStartDate ?: today.minusDays(30)) }
+    var endDate by remember(initialEndDate) { mutableStateOf(initialEndDate ?: today) }
+
+    var isSelectingStartDate by remember { mutableStateOf(false) }
+    var isSelectingEndDate by remember { mutableStateOf(false) }
+
+    val isDateOrderInvalid = startDate.isAfter(endDate)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("custom_date_range_picker_dialog"),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.DateRange,
+                    contentDescription = null,
+                    tint = GeoPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isArabic) "تحديد نطاق التاريخ المخصص" else "Custom Date Range",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = if (isArabic) "حدد تاريخ البداية والنهاية لتصفية المعاملات بدقة."
+                    else "Choose start and end dates to filter transactions precisely.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Date Selection Cards (From & To)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Start Date Card
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, GeoOutlineVariant),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { isSelectingStartDate = true }
+                            .testTag("custom_start_date_card")
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = if (isArabic) "من تاريخ" else "From Date",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    tint = GeoPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = startDate.toString(),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    modifier = Modifier.testTag("custom_start_date_text")
+                                )
+                            }
+                        }
+                    }
+
+                    // End Date Card
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, GeoOutlineVariant),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { isSelectingEndDate = true }
+                            .testTag("custom_end_date_card")
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = if (isArabic) "إلى تاريخ" else "To Date",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = null,
+                                    tint = GeoPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = endDate.toString(),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    modifier = Modifier.testTag("custom_end_date_text")
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Error indicator if start > end
+                if (isDateOrderInvalid) {
+                    Text(
+                        text = if (isArabic) "تاريخ البداية لا يمكن أن يكون بعد تاريخ النهاية"
+                        else "Start date cannot be after end date",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("custom_date_order_error")
+                    )
+                }
+
+                // Quick presets
+                Text(
+                    text = if (isArabic) "اختصارات سريعة" else "Quick Presets",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    PresetChip(
+                        label = if (isArabic) "٧ أيام" else "7 Days",
+                        isSelected = startDate == today.minusDays(6) && endDate == today,
+                        onClick = {
+                            startDate = today.minusDays(6)
+                            endDate = today
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    PresetChip(
+                        label = if (isArabic) "١٤ يوم" else "14 Days",
+                        isSelected = startDate == today.minusDays(13) && endDate == today,
+                        onClick = {
+                            startDate = today.minusDays(13)
+                            endDate = today
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    PresetChip(
+                        label = if (isArabic) "٣٠ يوم" else "30 Days",
+                        isSelected = startDate == today.minusDays(29) && endDate == today,
+                        onClick = {
+                            startDate = today.minusDays(29)
+                            endDate = today
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    PresetChip(
+                        label = if (isArabic) "هذا الشهر" else "This Month",
+                        isSelected = startDate == today.withDayOfMonth(1) && endDate == today,
+                        onClick = {
+                            startDate = today.withDayOfMonth(1)
+                            endDate = today
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(startDate, endDate)
+                },
+                enabled = !isDateOrderInvalid,
+                colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.testTag("custom_date_range_confirm_button")
+            ) {
+                Text(if (isArabic) "تطبيق" else "Apply")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("custom_date_range_dismiss_button")
+            ) {
+                Text(if (isArabic) "إلغاء" else "Cancel")
+            }
+        }
+    )
+
+    if (isSelectingStartDate) {
+        SingleDatePickerModal(
+            initialDate = startDate,
+            title = if (isArabic) "اختر تاريخ البداية" else "Select Start Date",
+            onDateSelected = { picked -> startDate = picked },
+            onDismiss = { isSelectingStartDate = false }
+        )
+    }
+
+    if (isSelectingEndDate) {
+        SingleDatePickerModal(
+            initialDate = endDate,
+            title = if (isArabic) "اختر تاريخ النهاية" else "Select End Date",
+            onDateSelected = { picked -> endDate = picked },
+            onDismiss = { isSelectingEndDate = false }
+        )
     }
 }
 
@@ -433,114 +833,6 @@ private fun PeriodSelectorChip(
 }
 
 // -------------------------------------------------------------
-// SHARED CUSTOMER CONTEXT BAR
-// -------------------------------------------------------------
-@Composable
-private fun CustomerContextBar(
-    selectedCustomer: CustomerAccount?,
-    isArabic: Boolean,
-    isRequired: Boolean = false,
-    onClickSelect: () -> Unit,
-    onClear: () -> Unit
-) {
-    Surface(
-        color = if (isRequired && selectedCustomer == null) StatusRedBg.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-        border = BorderStroke(0.5.dp, if (isRequired && selectedCustomer == null) StatusRed.copy(alpha = 0.4f) else GeoOutlineVariant),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("customer_context_bar")
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { onClickSelect() }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(if (selectedCustomer != null) GeoPrimary else MaterialTheme.colorScheme.outlineVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = if (selectedCustomer != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(
-                        text = if (isArabic) StoreStrings.CUSTOMER_CONTEXT_LABEL_AR else StoreStrings.CUSTOMER_CONTEXT_LABEL_EN,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = selectedCustomer?.customerName ?: (if (isArabic) StoreStrings.ALL_CUSTOMERS_AR else StoreStrings.ALL_CUSTOMERS_EN),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (selectedCustomer != null) GeoPrimary else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag("customer_context_value")
-                    )
-                }
-                if (isRequired && selectedCustomer == null) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isArabic) "(مطلوب)" else "(Required)",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = StatusRed
-                    )
-                }
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selectedCustomer != null) {
-                    IconButton(
-                        onClick = onClear,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .testTag("clear_customer_context_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Clear customer filter",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-                TextButton(
-                    onClick = onClickSelect,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                    modifier = Modifier.testTag("change_customer_context_button")
-                ) {
-                    Text(
-                        text = if (selectedCustomer == null) {
-                            if (isArabic) "تحديد عميل" else "Select"
-                        } else {
-                            if (isArabic) "تغيير" else "Change"
-                        },
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = GeoPrimary
-                    )
-                }
-            }
-        }
-    }
-}
-
-// -------------------------------------------------------------
 // TAB 1: STATISTICS
 // -------------------------------------------------------------
 @Composable
@@ -548,24 +840,26 @@ private fun StatisticsTabContent(
     transactions: List<TransactionItem>,
     selectedCustomer: CustomerAccount?,
     activePeriod: PeriodFilter,
+    customStartDate: LocalDate?,
+    customEndDate: LocalDate?,
     currency: String,
     isArabic: Boolean,
     context: Context,
     storeInfo: StoreInfo
 ) {
-    val filteredTransactions = remember(transactions, selectedCustomer, activePeriod) {
+    val filteredTransactions = remember(transactions, selectedCustomer, activePeriod, customStartDate, customEndDate) {
         var list = if (selectedCustomer != null) {
             transactions.filter { it.customerName.equals(selectedCustomer.customerName, ignoreCase = true) }
         } else {
             transactions
         }
         list.filter { tx ->
-            when (activePeriod) {
-                PeriodFilter.TODAY -> tx.date == "2026-09-05" || tx.relativeTime.contains("دقيقة") || tx.relativeTime.contains("ساعة") || tx.relativeTime.contains("الآن")
-                PeriodFilter.WEEK -> tx.date >= "2026-08-30" || tx.date.startsWith("2026-09")
-                PeriodFilter.MONTH -> tx.date.startsWith("2026-09")
-                PeriodFilter.CUSTOM -> true
-            }
+            DateFilterUtils.isDateInPeriod(
+                dateStr = tx.date,
+                period = activePeriod,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate
+            )
         }
     }
 
@@ -586,7 +880,7 @@ private fun StatisticsTabContent(
     }
     val partialSettlementAmount = remember(filteredTransactions) {
         filteredTransactions
-            .filter { (it.activityType.contains("تسديد") || it.activityType.contains("Payment") || it.activityType.contains("قسط")) && it.settlementType == SettlementType.PARTIAL }
+            .filter { (it.activityType.contains("تسديد") || it.activityType.contains("Payment")) && it.settlementType == SettlementType.PARTIAL }
             .sumOf { it.amount }
     }
     val totalPaymentsReceived = fullSettlementAmount + partialSettlementAmount
@@ -606,6 +900,44 @@ private fun StatisticsTabContent(
             DonutSegment(cashPercent.toFloat(), StatusBlue),
             DonutSegment(fullPercent.toFloat(), StatusGreen),
             DonutSegment(partialPercent.toFloat(), StatusAmber)
+        )
+    }
+
+    var selectedChartType by remember { mutableStateOf(BreakdownChartType.DONUT) }
+
+    val breakdownChartItems = remember(
+        totalDebtSales, totalCashSales, fullSettlementAmount, partialSettlementAmount,
+        debtPercent, cashPercent, fullPercent, partialPercent
+    ) {
+        listOf(
+            BreakdownChartItem(
+                labelAr = "آجل / ديون",
+                labelEn = "Debt",
+                amount = totalDebtSales,
+                percentage = debtPercent,
+                color = StatusRed
+            ),
+            BreakdownChartItem(
+                labelAr = "كاش / نقدي",
+                labelEn = "Cash",
+                amount = totalCashSales,
+                percentage = cashPercent,
+                color = StatusBlue
+            ),
+            BreakdownChartItem(
+                labelAr = "تسديد كامل",
+                labelEn = "Full Payment",
+                amount = fullSettlementAmount,
+                percentage = fullPercent,
+                color = StatusGreen
+            ),
+            BreakdownChartItem(
+                labelAr = "تسديد جزئي",
+                labelEn = "Partial Payment",
+                amount = partialSettlementAmount,
+                percentage = partialPercent,
+                color = StatusAmber
+            )
         )
     }
 
@@ -698,7 +1030,7 @@ private fun StatisticsTabContent(
             }
         }
 
-        // DONUT CHART + LEGEND CARD (Referencing DebtRatioRingChart)
+        // VOLUME & DEBT BREAKDOWN CARD WITH 3 CHART TABS (DONUT, COLUMN, COMBO)
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -713,66 +1045,122 @@ private fun StatisticsTabContent(
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Section-level chart tabs: [ دائري / Donut ] [ عمودي / Column ] [ مركب / Combo ]
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    BreakdownChartTabButton(
+                        title = if (isArabic) StoreStrings.CHART_TAB_DONUT_AR else StoreStrings.CHART_TAB_DONUT_EN,
+                        selected = selectedChartType == BreakdownChartType.DONUT,
+                        onClick = { selectedChartType = BreakdownChartType.DONUT },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("chart_tab_donut")
+                    )
+                    BreakdownChartTabButton(
+                        title = if (isArabic) StoreStrings.CHART_TAB_COLUMN_AR else StoreStrings.CHART_TAB_COLUMN_EN,
+                        selected = selectedChartType == BreakdownChartType.COLUMN,
+                        onClick = { selectedChartType = BreakdownChartType.COLUMN },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("chart_tab_column")
+                    )
+                    BreakdownChartTabButton(
+                        title = if (isArabic) StoreStrings.CHART_TAB_COMBO_AR else StoreStrings.CHART_TAB_COMBO_EN,
+                        selected = selectedChartType == BreakdownChartType.COMBO,
+                        onClick = { selectedChartType = BreakdownChartType.COMBO },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("chart_tab_combo")
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    // Donut Chart
-                    Box(
-                        modifier = Modifier.size(136.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        DebtRatioRingChart(
-                            segments = ringSegments,
-                            centerPercentage = debtPercent,
-                            subtitle = if (isArabic) "نسبة الديون" else "Debt Ratio",
-                            modifier = Modifier
-                                .size(136.dp)
-                                .testTag("statistics_donut_chart")
+                when (selectedChartType) {
+                    BreakdownChartType.DONUT -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Donut Chart
+                            Box(
+                                modifier = Modifier.size(136.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                DebtRatioRingChart(
+                                    segments = ringSegments,
+                                    centerPercentage = debtPercent,
+                                    subtitle = if (isArabic) "نسبة الديون" else "Debt Ratio",
+                                    modifier = Modifier
+                                        .size(136.dp)
+                                        .testTag("statistics_donut_chart")
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(16.dp))
+
+                            // 4-item Legend (Debt, Cash, Full Payment, Partial)
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                StatisticsLegendRow(
+                                    dotColor = StatusRed,
+                                    label = if (isArabic) "آجل / ديون" else "Debt",
+                                    amount = totalDebtSales,
+                                    percentage = debtPercent,
+                                    currency = currency,
+                                    testTag = "stat_legend_debt"
+                                )
+                                StatisticsLegendRow(
+                                    dotColor = StatusBlue,
+                                    label = if (isArabic) "كاش / نقدي" else "Cash",
+                                    amount = totalCashSales,
+                                    percentage = cashPercent,
+                                    currency = currency,
+                                    testTag = "stat_legend_cash"
+                                )
+                                StatisticsLegendRow(
+                                    dotColor = StatusGreen,
+                                    label = if (isArabic) "تسديد كامل" else "Full Payment",
+                                    amount = fullSettlementAmount,
+                                    percentage = fullPercent,
+                                    currency = currency,
+                                    testTag = "stat_legend_payment_full"
+                                )
+                                StatisticsLegendRow(
+                                    dotColor = StatusAmber,
+                                    label = if (isArabic) "تسديد جزئي" else "Partial Payment",
+                                    amount = partialSettlementAmount,
+                                    percentage = partialPercent,
+                                    currency = currency,
+                                    testTag = "stat_legend_partial"
+                                )
+                            }
+                        }
+                    }
+
+                    BreakdownChartType.COLUMN -> {
+                        BreakdownColumnChart(
+                            items = breakdownChartItems,
+                            currency = currency,
+                            isArabic = isArabic
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    // 4-item Legend (Debt, Cash, Full Payment, Installments)
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        StatisticsLegendRow(
-                            dotColor = StatusRed,
-                            label = if (isArabic) "آجل / ديون" else "Debt",
-                            amount = totalDebtSales,
-                            percentage = debtPercent,
+                    BreakdownChartType.COMBO -> {
+                        BreakdownComboChart(
+                            items = breakdownChartItems,
                             currency = currency,
-                            testTag = "stat_legend_debt"
-                        )
-                        StatisticsLegendRow(
-                            dotColor = StatusBlue,
-                            label = if (isArabic) "كاش / نقدي" else "Cash",
-                            amount = totalCashSales,
-                            percentage = cashPercent,
-                            currency = currency,
-                            testTag = "stat_legend_cash"
-                        )
-                        StatisticsLegendRow(
-                            dotColor = StatusGreen,
-                            label = if (isArabic) "تسديد كامل" else "Full Payment",
-                            amount = fullSettlementAmount,
-                            percentage = fullPercent,
-                            currency = currency,
-                            testTag = "stat_legend_payment_full"
-                        )
-                        StatisticsLegendRow(
-                            dotColor = StatusAmber,
-                            label = if (isArabic) "أقساط / جزئي" else "Installments",
-                            amount = partialSettlementAmount,
-                            percentage = partialPercent,
-                            currency = currency,
-                            testTag = "stat_legend_installment"
+                            isArabic = isArabic
                         )
                     }
                 }
@@ -806,7 +1194,7 @@ private fun StatisticsTabContent(
                                 ReportPreviewRow(if (isArabic) "مبيعات الآجل" else "Debt Sales", String.format(Locale.US, "%.2f", totalDebtSales), "$debtPercent%", currency),
                                 ReportPreviewRow(if (isArabic) "المبيعات النقدية" else "Cash Sales", String.format(Locale.US, "%.2f", totalCashSales), "$cashPercent%", currency),
                                 ReportPreviewRow(if (isArabic) "تسديد كامل" else "Full Payment", String.format(Locale.US, "%.2f", fullSettlementAmount), "$fullPercent%", currency),
-                                ReportPreviewRow(if (isArabic) "أقساط" else "Installments", String.format(Locale.US, "%.2f", partialSettlementAmount), "$partialPercent%", currency)
+                                ReportPreviewRow(if (isArabic) "تسديد جزئي" else "Partial Payment", String.format(Locale.US, "%.2f", partialSettlementAmount), "$partialPercent%", currency)
                             )
                             val kpis = listOf(
                                 Pair(if (isArabic) "إجمالي المبيعات" else "Total Sales", String.format(Locale.US, "%.2f %s", totalSales, currency)),
@@ -848,7 +1236,7 @@ private fun StatisticsTabContent(
                                 ReportPreviewRow(if (isArabic) "مبيعات الآجل" else "Debt Sales", String.format(Locale.US, "%.2f", totalDebtSales), "$debtPercent%", currency),
                                 ReportPreviewRow(if (isArabic) "المبيعات النقدية" else "Cash Sales", String.format(Locale.US, "%.2f", totalCashSales), "$cashPercent%", currency),
                                 ReportPreviewRow(if (isArabic) "تسديد كامل" else "Full Payment", String.format(Locale.US, "%.2f", fullSettlementAmount), "$fullPercent%", currency),
-                                ReportPreviewRow(if (isArabic) "أقساط" else "Installments", String.format(Locale.US, "%.2f", partialSettlementAmount), "$partialPercent%", currency)
+                                ReportPreviewRow(if (isArabic) "تسديد جزئي" else "Partial Payment", String.format(Locale.US, "%.2f", partialSettlementAmount), "$partialPercent%", currency)
                             )
                             val csv = ReportExporter.generateReportCsv(headers, rows)
                             val file = ReportExporter.createCachedCsv(context, "Stats_${System.currentTimeMillis()}.csv", csv)
@@ -877,7 +1265,7 @@ private fun StatisticsTabContent(
                                 appendLine(if (isArabic) "مبيعات الآجل: %,.2f %s (%d%%)".format(Locale.US, totalDebtSales, currency, debtPercent) else "Debt Sales: %,.2f %s (%d%%)".format(Locale.US, totalDebtSales, currency, debtPercent))
                                 appendLine(if (isArabic) "مبيعات كاش: %,.2f %s (%d%%)".format(Locale.US, totalCashSales, currency, cashPercent) else "Cash Sales: %,.2f %s (%d%%)".format(Locale.US, totalCashSales, currency, cashPercent))
                                 appendLine(if (isArabic) "تسديد كامل: %,.2f %s (%d%%)".format(Locale.US, fullSettlementAmount, currency, fullPercent) else "Full Payments: %,.2f %s (%d%%)".format(Locale.US, fullSettlementAmount, currency, fullPercent))
-                                appendLine(if (isArabic) "أقساط: %,.2f %s (%d%%)".format(Locale.US, partialSettlementAmount, currency, partialPercent) else "Installments: %,.2f %s (%d%%)".format(Locale.US, partialSettlementAmount, currency, partialPercent))
+                                appendLine(if (isArabic) "تسديد جزئي: %,.2f %s (%d%%)".format(Locale.US, partialSettlementAmount, currency, partialPercent) else "Partial Payments: %,.2f %s (%d%%)".format(Locale.US, partialSettlementAmount, currency, partialPercent))
                                 appendLine(if (isArabic) "صافي الديون: %,.2f %s".format(Locale.US, netBalance, currency) else "Net Outstanding: %,.2f %s".format(Locale.US, netBalance, currency))
                             }
                             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -1021,30 +1409,84 @@ private fun KpiMetricCard(
 private fun AccountStatementTabContent(
     viewModel: AnalysisCenterViewModel,
     uiState: AnalysisCenterUiState,
+    customers: List<CustomerAccount>,
     allTransactions: List<TransactionItem>,
     activePeriod: PeriodFilter,
+    customStartDate: LocalDate?,
+    customEndDate: LocalDate?,
     currency: String,
-    isArabic: Boolean,
-    context: Context,
-    storeInfo: StoreInfo
+    isArabic: Boolean
 ) {
-    val focusManager = LocalFocusManager.current
     val rows = remember(
         allTransactions,
         uiState.selectedCustomer,
         uiState.statementFilter,
-        uiState.statementSearchQuery,
-        activePeriod
+        activePeriod,
+        customStartDate,
+        customEndDate
     ) {
         viewModel.computeStatementRows(
             allTransactions = allTransactions,
             selectedCustomer = uiState.selectedCustomer,
             filter = uiState.statementFilter,
-            searchQuery = uiState.statementSearchQuery,
-            period = activePeriod
+            period = activePeriod,
+            customStartDate = customStartDate,
+            customEndDate = customEndDate
         )
     }
 
+    // Scoped transactions reflecting CURRENT statement scope (selected customer or shop-wide), filtered by active period
+    val scopedTransactions = remember(allTransactions, uiState.selectedCustomer, activePeriod, customStartDate, customEndDate) {
+        val custFiltered = if (uiState.selectedCustomer != null) {
+            allTransactions.filter { it.customerName.equals(uiState.selectedCustomer.customerName, ignoreCase = true) }
+        } else {
+            allTransactions
+        }
+        custFiltered.filter { tx ->
+            DateFilterUtils.isDateInPeriod(
+                dateStr = tx.date,
+                period = activePeriod,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate
+            )
+        }
+    }
+
+    // Cash Sales for the period/customer in scope
+    val periodCashSales = remember(scopedTransactions) {
+        scopedTransactions
+            .filter { !it.isCredit && (it.activityType.contains("كاش") || it.activityType.contains("Cash") || (!it.activityType.contains("تسديد") && !it.activityType.contains("Payment") && !it.activityType.contains("آجل") && !it.activityType.contains("دين") && !it.activityType.contains("Debt"))) }
+            .sumOf { it.amount }
+    }
+
+    // Credit (Debt) Sales for the period/customer in scope
+    val periodDebtSales = remember(scopedTransactions) {
+        scopedTransactions
+            .filter { it.isCredit || it.activityType.contains("آجل") || it.activityType.contains("دين") || it.activityType.contains("Debt") }
+            .sumOf { it.amount }
+    }
+
+    // CRITICAL: Total Sales = Cash Sales + Credit Sales (Debt Sales) for the period/customer in scope (NOT Debt + Payments)
+    val periodTotalSales = periodCashSales + periodDebtSales
+
+    // Payments received toward debt reduction for the period/customer in scope
+    val periodPayments = remember(scopedTransactions) {
+        scopedTransactions
+            .filter { it.activityType.contains("تسديد") || it.activityType.contains("Payment") }
+            .sumOf { it.amount }
+    }
+
+    // Debt box = current outstanding balance right now (what is currently owed, not a period-summed figure)
+    val currentDebtOwed = remember(uiState.selectedCustomer, customers) {
+        if (uiState.selectedCustomer != null) {
+            val liveCust = customers.find { it.id == uiState.selectedCustomer.id } ?: uiState.selectedCustomer
+            if (liveCust.totalDebt > 0) liveCust.totalDebt else liveCust.balance.coerceAtLeast(0.0)
+        } else {
+            customers.sumOf { if (it.totalDebt > 0) it.totalDebt else it.balance.coerceAtLeast(0.0) }
+        }
+    }
+
+    // Totals for table list bottom row
     val totalOut = rows.filter { !it.isPayment }.sumOf { it.amount }
     val totalIn = rows.filter { it.isPayment }.sumOf { it.amount }
     val netBalance = totalOut - totalIn
@@ -1054,7 +1496,73 @@ private fun AccountStatementTabContent(
             .fillMaxSize()
             .testTag("account_statement_tab_content")
     ) {
-        // FILTERS HEADER
+        // 2x2 GRID OF FOUR SUMMARY BOXES (Directly below customer selector)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .testTag("statement_summary_grid"),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Row 1 (larger, more prominent boxes): "Total" and "Debt"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatementSummaryCard(
+                    title = if (isArabic) "المجموع الكلي" else "Total Sales",
+                    subtitle = if (isArabic) "(مبيعات كاش + آجل)" else "(Cash + Debt Sales)",
+                    value = String.format(Locale.US, "%,.2f %s", periodTotalSales, currency),
+                    color = GeoPrimary,
+                    isLarge = true,
+                    testTag = "statement_summary_total",
+                    modifier = Modifier.weight(1f)
+                )
+                StatementSummaryCard(
+                    title = if (isArabic) "الدين المستحق" else "Debt Due",
+                    subtitle = if (uiState.selectedCustomer != null) {
+                        if (isArabic) "(الرصيد القائم بذمته)" else "(Current Balance Due)"
+                    } else {
+                        if (isArabic) "(إجمالي الديون القائمة)" else "(Total Shop Debt Due)"
+                    },
+                    value = String.format(Locale.US, "%,.2f %s", currentDebtOwed, currency),
+                    color = StatusRed,
+                    isLarge = true,
+                    testTag = "statement_summary_debt",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Row 2 (smaller boxes): "Cash" and "Payments"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatementSummaryCard(
+                    title = if (isArabic) "الكاش" else "Cash Sales",
+                    subtitle = if (isArabic) "(مبيعات نقدية للفترة)" else "(Period Cash Sales)",
+                    value = String.format(Locale.US, "%,.2f %s", periodCashSales, currency),
+                    color = StatusBlue,
+                    isLarge = false,
+                    testTag = "statement_summary_cash",
+                    modifier = Modifier.weight(1f)
+                )
+                StatementSummaryCard(
+                    title = if (isArabic) "الدفعات" else "Payments",
+                    subtitle = if (isArabic) "(سداد ديون الفترة)" else "(Debt Payments Made)",
+                    value = String.format(Locale.US, "%,.2f %s", periodPayments, currency),
+                    color = StatusGreen,
+                    isLarge = false,
+                    testTag = "statement_summary_payments",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        HorizontalDivider(color = GeoOutlineVariant)
+
+        // FILTERS & SEARCH (View-only, no export controls)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1096,234 +1604,6 @@ private fun AccountStatementTabContent(
                     onClick = { viewModel.setStatementFilter(StatementTxFilter.DEBT_PURCHASE) },
                     modifier = Modifier.weight(1.2f)
                 )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Search Bar & Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = uiState.statementSearchQuery,
-                    onValueChange = { viewModel.setStatementSearchQuery(it) },
-                    placeholder = {
-                        Text(
-                            text = if (isArabic) "بحث في العمليات..." else "Search transactions...",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                    },
-                    trailingIcon = {
-                        if (uiState.statementSearchQuery.isNotEmpty()) {
-                            IconButton(onClick = {
-                                viewModel.setStatementSearchQuery("")
-                                focusManager.clearFocus()
-                            }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = GeoPrimary,
-                        unfocusedBorderColor = GeoOutlineVariant
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp)
-                        .testTag("statement_search_field")
-                )
-
-                // Quick Export PDF Button
-                IconButton(
-                    onClick = {
-                        val previewRows = rows.map { row ->
-                            ReportPreviewRow(
-                                col1 = row.date,
-                                col2 = row.customerName,
-                                col3 = row.type,
-                                col4 = String.format(Locale.US, "%.2f", if (row.isPayment) -row.amount else row.amount)
-                            )
-                        }
-                        val headers = if (isArabic) listOf("التاريخ", "العميل", "النوع", "المبلغ") else listOf("Date", "Customer", "Type", "Amount")
-                        val kpis = listOf(
-                            Pair(if (isArabic) "إجمالي الوارد" else "Total In", String.format(Locale.US, "%.2f %s", totalIn, currency)),
-                            Pair(if (isArabic) "إجمالي المنصرف" else "Total Out", String.format(Locale.US, "%.2f %s", totalOut, currency)),
-                            Pair(if (isArabic) "الرصيد الصافي" else "Net Balance", String.format(Locale.US, "%.2f %s", netBalance, currency))
-                        )
-                        val title = if (isArabic) StoreStrings.TAB_STATEMENT_AR else StoreStrings.TAB_STATEMENT_EN
-                        val subtitle = uiState.selectedCustomer?.customerName ?: (if (isArabic) "كافة العملاء" else "All Customers")
-                        val file = ReportExporter.createCachedPdf(
-                            context = context,
-                            fileName = "Statement_${System.currentTimeMillis()}.pdf",
-                            title = title,
-                            storeName = storeInfo.storeName,
-                            subtitle = subtitle,
-                            kpis = kpis,
-                            headers = headers,
-                            rows = previewRows
-                        )
-                        ReportExporter.shareFile(context, file, "application/pdf", "Account Statement PDF")
-                        Toast.makeText(context, if (isArabic) "تم تجهيز ملف PDF للمشاركة" else "PDF ready for export", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(GeoPrimary.copy(alpha = 0.10f))
-                        .testTag("statement_export_pdf_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PictureAsPdf,
-                        contentDescription = "Export PDF",
-                        tint = GeoPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                // Quick Export CSV Button
-                IconButton(
-                    onClick = {
-                        val csv = ReportExporter.generateStatementCsv(rows, isArabic)
-                        val file = ReportExporter.createCachedCsv(context, "Statement_${System.currentTimeMillis()}.csv", csv)
-                        ReportExporter.shareFile(context, file, "text/csv", "Account Statement CSV")
-                        Toast.makeText(context, if (isArabic) "تم تجهيز ملف CSV للمشاركة" else "CSV ready for export", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(GeoPrimary.copy(alpha = 0.10f))
-                        .testTag("statement_export_csv_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = "Export CSV",
-                        tint = GeoPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                // Share Text Summary Button
-                IconButton(
-                    onClick = {
-                        val text = ReportExporter.generateStatementShareText(
-                            customerName = uiState.selectedCustomer?.customerName ?: (if (isArabic) "كافة العملاء" else "All Customers"),
-                            rows = rows,
-                            totalIn = totalIn,
-                            totalOut = totalOut,
-                            netBalance = netBalance,
-                            isArabic = isArabic
-                        )
-                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_TEXT, text)
-                        }
-                        context.startActivity(android.content.Intent.createChooser(intent, "Share Statement"))
-                    },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(GeoPrimary.copy(alpha = 0.10f))
-                        .testTag("statement_share_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Share Text",
-                        tint = GeoPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-
-        HorizontalDivider(color = GeoOutlineVariant)
-
-        // 3 DEDICATED SUMMARY CARDS
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Summary card: Total In
-            Card(
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, GeoOutlineVariant),
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("statement_summary_in")
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Text(
-                        text = if (isArabic) "إجمالي الوارد" else "Total In",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = String.format(Locale.US, "%,.2f", totalIn),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = StatusGreen
-                    )
-                }
-            }
-
-            // Summary card: Total Out
-            Card(
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, GeoOutlineVariant),
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("statement_summary_out")
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Text(
-                        text = if (isArabic) "إجمالي المنصرف" else "Total Out",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = String.format(Locale.US, "%,.2f", totalOut),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = StatusRed
-                    )
-                }
-            }
-
-            // Summary card: Net Balance
-            Card(
-                shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, GeoOutlineVariant),
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("statement_summary_net")
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Text(
-                        text = if (isArabic) "الرصيد الصافي" else "Net Balance",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = String.format(Locale.US, "%,.2f", netBalance),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (netBalance > 0) StatusRed else StatusGreen,
-                        modifier = Modifier.testTag("statement_net_balance_value")
-                    )
-                }
             }
         }
 
@@ -1407,6 +1687,55 @@ private fun AccountStatementTabContent(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StatementSummaryCard(
+    title: String,
+    subtitle: String,
+    value: String,
+    color: Color,
+    isLarge: Boolean,
+    testTag: String,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        shape = RoundedCornerShape(if (isLarge) 12.dp else 10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(if (isLarge) 1.5.dp else 1.dp, color.copy(alpha = if (isLarge) 0.35f else 0.2f)),
+        modifier = modifier.testTag(testTag)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(if (isLarge) 12.dp else 8.dp),
+            verticalArrangement = Arrangement.spacedBy(if (isLarge) 3.dp else 2.dp)
+        ) {
+            Text(
+                text = title,
+                style = if (isLarge) MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                else MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = value,
+                style = if (isLarge) MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                else MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp),
+                color = color,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = if (isLarge) 10.sp else 9.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -1543,101 +1872,275 @@ private fun ReportsTabContent(
     uiState: AnalysisCenterUiState,
     customers: List<CustomerAccount>,
     allTransactions: List<TransactionItem>,
+    products: List<ProductItem>,
+    transactionLines: List<TransactionItemLineEntity>,
     activePeriod: PeriodFilter,
+    customStartDate: LocalDate?,
+    customEndDate: LocalDate?,
     currency: String,
     isArabic: Boolean,
     context: Context,
-    storeInfo: StoreInfo,
-    onSelectCustomerRequest: () -> Unit
+    storeInfo: StoreInfo
 ) {
     val reportTypes = listOf(
-        ReportType.COMPREHENSIVE_CUSTOMER to (if (isArabic) StoreStrings.REPORT_COMPREHENSIVE_CUSTOMER_AR else StoreStrings.REPORT_COMPREHENSIVE_CUSTOMER_EN),
-        ReportType.SALES_SUMMARY to (if (isArabic) StoreStrings.REPORT_SALES_SUMMARY_AR else StoreStrings.REPORT_SALES_SUMMARY_EN),
         ReportType.DEBT_BALANCES to (if (isArabic) StoreStrings.REPORT_DEBT_BALANCES_AR else StoreStrings.REPORT_DEBT_BALANCES_EN),
-        ReportType.TAX_SUMMARY to (if (isArabic) StoreStrings.REPORT_TAX_SUMMARY_AR else StoreStrings.REPORT_TAX_SUMMARY_EN)
+        ReportType.SALES_AND_ITEMS to (if (isArabic) StoreStrings.REPORT_SALES_AND_ITEMS_AR else StoreStrings.REPORT_SALES_AND_ITEMS_EN),
+        ReportType.TRANSACTIONS to (if (isArabic) StoreStrings.REPORT_TRANSACTIONS_AR else StoreStrings.REPORT_TRANSACTIONS_EN),
+        ReportType.COMPREHENSIVE_CUSTOMER to (if (isArabic) StoreStrings.REPORT_COMPREHENSIVE_CUSTOMER_AR else StoreStrings.REPORT_COMPREHENSIVE_CUSTOMER_EN)
     )
 
-    // Build data based on selected report type
     val isComprehensiveCustomer = uiState.selectedReportType == ReportType.COMPREHENSIVE_CUSTOMER
     val customerIsSelected = uiState.selectedCustomer != null
 
-    // Generate table preview rows
-    val previewRows = remember(uiState.selectedReportType, uiState.selectedCustomer, activePeriod, allTransactions, customers) {
-        when (uiState.selectedReportType) {
-            ReportType.COMPREHENSIVE_CUSTOMER -> {
-                if (uiState.selectedCustomer == null) {
-                    emptyList()
+    // Filter transactions by active period dynamically
+    val periodTransactions = remember(allTransactions, activePeriod, customStartDate, customEndDate) {
+        allTransactions.filter { tx ->
+            DateFilterUtils.isDateInPeriod(
+                dateStr = tx.date,
+                period = activePeriod,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate
+            )
+        }
+    }
+
+    // Period display label
+    val periodLabel = remember(activePeriod, customStartDate, customEndDate, isArabic) {
+        when (activePeriod) {
+            PeriodFilter.TODAY -> if (isArabic) StoreStrings.PERIOD_TODAY_AR else StoreStrings.PERIOD_TODAY_EN
+            PeriodFilter.WEEK -> if (isArabic) StoreStrings.PERIOD_WEEK_AR else StoreStrings.PERIOD_WEEK_EN
+            PeriodFilter.MONTH -> if (isArabic) StoreStrings.PERIOD_MONTH_AR else StoreStrings.PERIOD_MONTH_EN
+            PeriodFilter.CUSTOM -> {
+                if (customStartDate != null && customEndDate != null) {
+                    "${customStartDate} -> ${customEndDate}"
                 } else {
-                    val custTxs = allTransactions.filter { it.customerName.equals(uiState.selectedCustomer.customerName, ignoreCase = true) }
-                    custTxs.map { tx ->
-                        ReportPreviewRow(
-                            col1 = tx.date,
-                            col2 = if (tx.notes.isNotBlank()) tx.notes else tx.activityType,
-                            col3 = tx.activityType,
-                            col4 = String.format(Locale.US, "%.2f", tx.amount)
-                        )
-                    }
-                }
-            }
-            ReportType.SALES_SUMMARY -> {
-                allTransactions.take(15).map { tx ->
-                    ReportPreviewRow(
-                        col1 = tx.date,
-                        col2 = tx.customerName,
-                        col3 = tx.activityType,
-                        col4 = String.format(Locale.US, "%.2f", tx.amount)
-                    )
-                }
-            }
-            ReportType.DEBT_BALANCES -> {
-                customers.filter { it.balance > 0 }.map { cust ->
-                    ReportPreviewRow(
-                        col1 = cust.customerName,
-                        col2 = cust.phone,
-                        col3 = if (isArabic) "مدين" else "Debit",
-                        col4 = String.format(Locale.US, "%.2f", cust.balance)
-                    )
-                }
-            }
-            ReportType.TAX_SUMMARY -> {
-                allTransactions.take(10).map { tx ->
-                    val tax = tx.amount * 0.15
-                    ReportPreviewRow(
-                        col1 = tx.date,
-                        col2 = tx.activityType,
-                        col3 = String.format(Locale.US, "%.2f", tx.amount),
-                        col4 = String.format(Locale.US, "%.2f", tax)
-                    )
+                    if (isArabic) StoreStrings.PERIOD_CUSTOM_AR else StoreStrings.PERIOD_CUSTOM_EN
                 }
             }
         }
     }
 
+    // 1. DEBT_BALANCES calculations
+    val storeAgingSummary = remember(customers, allTransactions, isArabic) {
+        DebtAgingUtils.calculateStoreDebtAgingSummary(customers, allTransactions, isArabic = isArabic)
+    }
+    val customerDebtAgings = storeAgingSummary.customerAgings
+    val totalOutstandingDebt = storeAgingSummary.totalOutstandingDebt
+    val totalCustomersWithDebtCount = storeAgingSummary.totalCustomersWithDebtCount
+    val sum0To30 = storeAgingSummary.sum0To30
+    val sum31To60 = storeAgingSummary.sum31To60
+    val sum61To90 = storeAgingSummary.sum61To90
+    val sum90Plus = storeAgingSummary.sum90Plus
+
+    // 2. SALES_AND_ITEMS calculations
+    val cashSalesInvoices = remember(periodTransactions) {
+        periodTransactions.filter { tx ->
+            !tx.isCredit && (tx.activityType.contains("كاش") || tx.activityType.contains("Cash") || (!tx.activityType.contains("تسديد") && !tx.activityType.contains("Payment") && !tx.activityType.contains("آجل") && !tx.activityType.contains("دين") && !tx.activityType.contains("Debt")))
+        }
+    }
+    val debtSalesInvoices = remember(periodTransactions) {
+        periodTransactions.filter { tx ->
+            tx.isCredit || tx.activityType.contains("آجل") || tx.activityType.contains("دين") || tx.activityType.contains("Debt") || tx.activityType.contains("شراء بالدين")
+        }
+    }
+    val totalCashSalesAmount = remember(cashSalesInvoices) { cashSalesInvoices.sumOf { it.amount } }
+    val totalDebtSalesAmount = remember(debtSalesInvoices) { debtSalesInvoices.sumOf { it.amount } }
+    val totalSalesAmount = remember(totalCashSalesAmount, totalDebtSalesAmount) { totalCashSalesAmount + totalDebtSalesAmount }
+    val totalInvoicesCount = remember(cashSalesInvoices, debtSalesInvoices) { cashSalesInvoices.size + debtSalesInvoices.size }
+
+    data class AggregatedProductLine(
+        val productId: String,
+        val productName: String,
+        val totalQuantity: Int,
+        val totalSales: Double,
+        val profitMargin: Double
+    )
+
+    val itemBreakdowns = remember(periodTransactions, transactionLines) {
+        val periodTxIds = periodTransactions.map { it.id }.toSet()
+        val linesInPeriod = transactionLines.filter { it.transactionId in periodTxIds }
+        linesInPeriod.groupBy { it.productNameSnapshot.ifBlank { it.productId ?: "-" } }
+            .map { (name, lines) ->
+                val totalQty = lines.sumOf { it.quantity }
+                val totalSales = lines.sumOf { it.subtotal }
+                val profitMargin = lines.sumOf { line ->
+                    val margin = (line.unitPrice - line.costPrice).coerceAtLeast(0.0)
+                    margin * line.quantity
+                }
+                AggregatedProductLine(
+                    productId = lines.firstOrNull()?.productId ?: "",
+                    productName = name,
+                    totalQuantity = totalQty,
+                    totalSales = totalSales,
+                    profitMargin = profitMargin
+                )
+            }.sortedByDescending { it.totalQuantity }
+    }
+    val totalItemProfitMargin = remember(itemBreakdowns) { itemBreakdowns.sumOf { it.profitMargin } }
+
+    // 3. TRANSACTIONS calculations
+    val sortedTransactions = remember(periodTransactions) { periodTransactions.sortedByDescending { it.date } }
+    val totalTxCash = remember(periodTransactions) {
+        periodTransactions.filter { !it.isCredit && (it.activityType.contains("كاش") || it.activityType.contains("Cash") || (!it.activityType.contains("تسديد") && !it.activityType.contains("Payment") && !it.activityType.contains("آجل") && !it.activityType.contains("دين") && !it.activityType.contains("Debt"))) }.sumOf { it.amount }
+    }
+    val totalTxDebt = remember(periodTransactions) {
+        periodTransactions.filter { it.isCredit || it.activityType.contains("آجل") || it.activityType.contains("دين") || it.activityType.contains("Debt") || it.activityType.contains("شراء بالدين") }.sumOf { it.amount }
+    }
+    val totalTxPayments = remember(periodTransactions) {
+        periodTransactions.filter { it.activityType.contains("تسديد") || it.activityType.contains("Payment") }.sumOf { it.amount }
+    }
+
+    // 4. COMPREHENSIVE_CUSTOMER calculations
+    val selectedCustomer = uiState.selectedCustomer
+    val customerTransactions = remember(periodTransactions, selectedCustomer) {
+        if (selectedCustomer == null) emptyList()
+        else periodTransactions.filter { it.customerName.equals(selectedCustomer.customerName, ignoreCase = true) }.sortedByDescending { it.date }
+    }
+    val customerCashPurchases = remember(customerTransactions) {
+        customerTransactions.filter { !it.isCredit && (it.activityType.contains("كاش") || it.activityType.contains("Cash") || (!it.activityType.contains("تسديد") && !it.activityType.contains("Payment") && !it.activityType.contains("آجل") && !it.activityType.contains("دين") && !it.activityType.contains("Debt"))) }.sumOf { it.amount }
+    }
+    val customerDebtPurchases = remember(customerTransactions) {
+        customerTransactions.filter { it.isCredit || it.activityType.contains("آجل") || it.activityType.contains("دين") || it.activityType.contains("Debt") || it.activityType.contains("شراء بالدين") }.sumOf { it.amount }
+    }
+    val customerPayments = remember(customerTransactions) {
+        customerTransactions.filter { it.activityType.contains("تسديد") || it.activityType.contains("Payment") }.sumOf { it.amount }
+    }
+    val singleCustomerAging = remember(selectedCustomer, allTransactions, isArabic) {
+        if (selectedCustomer == null) null
+        else DebtAgingUtils.calculateCustomerAging(selectedCustomer, allTransactions, isArabic = isArabic)
+    }
+    val customerItemBreakdowns = remember(customerTransactions, transactionLines) {
+        val custTxIds = customerTransactions.map { it.id }.toSet()
+        val lines = transactionLines.filter { it.transactionId in custTxIds }
+        lines.groupBy { it.productNameSnapshot.ifBlank { it.productId ?: "-" } }
+            .map { (name, gLines) ->
+                AggregatedProductLine(
+                    productId = gLines.firstOrNull()?.productId ?: "",
+                    productName = name,
+                    totalQuantity = gLines.sumOf { it.quantity },
+                    totalSales = gLines.sumOf { it.subtotal },
+                    profitMargin = 0.0
+                )
+            }.sortedByDescending { it.totalQuantity }
+    }
+
+    // Table Headers
     val tableHeaders = when (uiState.selectedReportType) {
-        ReportType.COMPREHENSIVE_CUSTOMER -> listOf(
-            if (isArabic) "التاريخ" else "Date",
-            if (isArabic) "الوصف" else "Description",
-            if (isArabic) "النوع" else "Type",
-            if (isArabic) "المبلغ" else "Amount"
-        )
-        ReportType.SALES_SUMMARY -> listOf(
-            if (isArabic) "التاريخ" else "Date",
-            if (isArabic) "العميل" else "Customer",
-            if (isArabic) "النوع" else "Type",
-            if (isArabic) "المبلغ" else "Amount"
-        )
         ReportType.DEBT_BALANCES -> listOf(
             if (isArabic) "العميل" else "Customer",
             if (isArabic) "الهاتف" else "Phone",
-            if (isArabic) "الحالة" else "Status",
-            if (isArabic) "الرصيد" else "Balance"
+            if (isArabic) "أعمار الديون" else "Debt Aging",
+            if (isArabic) "الرصيد المستحق" else "Balance Due"
         )
-        ReportType.TAX_SUMMARY -> listOf(
+        ReportType.SALES_AND_ITEMS -> listOf(
+            if (isArabic) "الصنف / البيان" else "Item / Description",
+            if (isArabic) "الكمية" else "Quantity",
+            if (isArabic) "إجمالي المبيعات" else "Total Sales",
+            if (isArabic) "هامش الربح" else "Profit Margin"
+        )
+        ReportType.TRANSACTIONS -> listOf(
             if (isArabic) "التاريخ" else "Date",
-            if (isArabic) "البيان" else "Detail",
-            if (isArabic) "الإجمالي" else "Total",
-            if (isArabic) "الضريبة (15%)" else "VAT (15%)"
+            if (isArabic) "العميل" else "Customer",
+            if (isArabic) "نوع المعاملة" else "Type",
+            if (isArabic) "المبلغ" else "Amount"
         )
+        ReportType.COMPREHENSIVE_CUSTOMER -> listOf(
+            if (isArabic) "التاريخ" else "Date",
+            if (isArabic) "البيان / الوصف" else "Description",
+            if (isArabic) "النوع" else "Type",
+            if (isArabic) "المبلغ" else "Amount"
+        )
+    }
+
+    // Preview rows based on active report type
+    val previewRows: List<ReportPreviewRow> = remember(
+        uiState.selectedReportType,
+        customerDebtAgings,
+        itemBreakdowns,
+        sortedTransactions,
+        customerTransactions,
+        selectedCustomer,
+        cashSalesInvoices,
+        debtSalesInvoices,
+        totalCashSalesAmount,
+        totalDebtSalesAmount,
+        isArabic
+    ) {
+        when (uiState.selectedReportType) {
+            ReportType.DEBT_BALANCES -> {
+                customerDebtAgings.filter { it.currentDebt > 0 || it.currentBalance > 0 }.map { aging ->
+                    ReportPreviewRow(
+                        col1 = aging.customerName,
+                        col2 = aging.phone.ifBlank { "-" },
+                        col3 = aging.formatAgingSummary(isArabic),
+                        col4 = String.format(Locale.US, "%.2f", aging.currentDebt)
+                    )
+                }
+            }
+            ReportType.SALES_AND_ITEMS -> {
+                if (itemBreakdowns.isEmpty()) {
+                    listOf(
+                        ReportPreviewRow(
+                            col1 = if (isArabic) "إجمالي المبيعات النقدية" else "Total Cash Sales",
+                            col2 = "${cashSalesInvoices.size} ${if (isArabic) "فاتورة" else "inv"}",
+                            col3 = String.format(Locale.US, "%.2f", totalCashSalesAmount),
+                            col4 = "-"
+                        ),
+                        ReportPreviewRow(
+                            col1 = if (isArabic) "إجمالي المبيعات الآجلة" else "Total Debt Sales",
+                            col2 = "${debtSalesInvoices.size} ${if (isArabic) "فاتورة" else "inv"}",
+                            col3 = String.format(Locale.US, "%.2f", totalDebtSalesAmount),
+                            col4 = "-"
+                        )
+                    )
+                } else {
+                    itemBreakdowns.map { item ->
+                        ReportPreviewRow(
+                            col1 = item.productName,
+                            col2 = "${item.totalQuantity}",
+                            col3 = String.format(Locale.US, "%.2f", item.totalSales),
+                            col4 = String.format(Locale.US, "%.2f", item.profitMargin)
+                        )
+                    }
+                }
+            }
+            ReportType.TRANSACTIONS -> {
+                sortedTransactions.map { tx ->
+                    val typeLabel = if (tx.activityType.contains("تسديد") || tx.activityType.contains("Payment")) {
+                        if (isArabic) "تسديد (دفعة)" else "Payment"
+                    } else if (tx.isCredit || tx.activityType.contains("آجل") || tx.activityType.contains("دين") || tx.activityType.contains("Debt") || tx.activityType.contains("شراء بالدين")) {
+                        if (isArabic) "شراء آجل (دين)" else "Debt Purchase"
+                    } else {
+                        if (isArabic) "شراء نقدي (كاش)" else "Cash Purchase"
+                    }
+                    ReportPreviewRow(
+                        col1 = tx.date,
+                        col2 = tx.customerName,
+                        col3 = typeLabel,
+                        col4 = String.format(Locale.US, "%.2f", tx.amount)
+                    )
+                }
+            }
+            ReportType.COMPREHENSIVE_CUSTOMER -> {
+                if (selectedCustomer == null) emptyList()
+                else customerTransactions.map { tx ->
+                    val desc = tx.notes.ifBlank { tx.activityType }
+                    val typeLabel = if (tx.activityType.contains("تسديد") || tx.activityType.contains("Payment")) {
+                        if (isArabic) "تسديد" else "Payment"
+                    } else if (tx.isCredit || tx.activityType.contains("آجل") || tx.activityType.contains("دين") || tx.activityType.contains("Debt") || tx.activityType.contains("شراء بالدين")) {
+                        if (isArabic) "شراء آجل" else "Debt"
+                    } else {
+                        if (isArabic) "شراء كاش" else "Cash"
+                    }
+                    ReportPreviewRow(
+                        col1 = tx.date,
+                        col2 = desc,
+                        col3 = typeLabel,
+                        col4 = String.format(Locale.US, "%.2f", tx.amount)
+                    )
+                }
+            }
+        }
     }
 
     Column(
@@ -1649,6 +2152,44 @@ private fun ReportsTabContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // 1. Report Type Selector Card (2x2 Grid)
+        val canExport = !isComprehensiveCustomer || customerIsSelected
+
+        val reportTitle = when (uiState.selectedReportType) {
+            ReportType.DEBT_BALANCES -> if (isArabic) StoreStrings.REPORT_DEBT_BALANCES_AR else StoreStrings.REPORT_DEBT_BALANCES_EN
+            ReportType.SALES_AND_ITEMS -> if (isArabic) StoreStrings.REPORT_SALES_AND_ITEMS_AR else StoreStrings.REPORT_SALES_AND_ITEMS_EN
+            ReportType.TRANSACTIONS -> if (isArabic) StoreStrings.REPORT_TRANSACTIONS_AR else StoreStrings.REPORT_TRANSACTIONS_EN
+            ReportType.COMPREHENSIVE_CUSTOMER -> {
+                if (selectedCustomer != null) {
+                    "${if (isArabic) StoreStrings.REPORT_COMPREHENSIVE_CUSTOMER_AR else StoreStrings.REPORT_COMPREHENSIVE_CUSTOMER_EN} - ${selectedCustomer.customerName}"
+                } else {
+                    if (isArabic) StoreStrings.REPORT_COMPREHENSIVE_CUSTOMER_AR else StoreStrings.REPORT_COMPREHENSIVE_CUSTOMER_EN
+                }
+            }
+        }
+
+        val exportKpis = when (uiState.selectedReportType) {
+            ReportType.DEBT_BALANCES -> listOf(
+                (if (isArabic) "إجمالي الديون" else "Total Debt") to AppCurrency.formatAmountWithDecimals(totalOutstandingDebt, isArabic),
+                (if (isArabic) "العملاء المدينون" else "Debtor Customers") to "$totalCustomersWithDebtCount",
+                (if (isArabic) "+90 يوم" else "90+ Days") to AppCurrency.formatAmount(sum90Plus)
+            )
+            ReportType.SALES_AND_ITEMS -> listOf(
+                (if (isArabic) "إجمالي المبيعات" else "Total Sales") to AppCurrency.formatAmountWithDecimals(totalSalesAmount, isArabic),
+                (if (isArabic) "مبيعات كاش" else "Cash Sales") to AppCurrency.formatAmountWithDecimals(totalCashSalesAmount, isArabic),
+                (if (isArabic) "مبيعات آجل" else "Debt Sales") to AppCurrency.formatAmountWithDecimals(totalDebtSalesAmount, isArabic)
+            )
+            ReportType.TRANSACTIONS -> listOf(
+                (if (isArabic) "إجمالي الكاش" else "Cash Sum") to AppCurrency.formatAmountWithDecimals(totalTxCash, isArabic),
+                (if (isArabic) "إجمالي الآجل" else "Debt Sum") to AppCurrency.formatAmountWithDecimals(totalTxDebt, isArabic),
+                (if (isArabic) "إجمالي التسديد" else "Payments") to AppCurrency.formatAmountWithDecimals(totalTxPayments, isArabic)
+            )
+            ReportType.COMPREHENSIVE_CUSTOMER -> listOf(
+                (if (isArabic) "الرصيد المستحق" else "Balance Due") to AppCurrency.formatAmountWithDecimals(selectedCustomer?.balance ?: 0.0, isArabic),
+                (if (isArabic) "مشتريات كاش" else "Cash Purchases") to AppCurrency.formatAmountWithDecimals(customerCashPurchases, isArabic),
+                (if (isArabic) "مشتريات آجل" else "Debt Purchases") to AppCurrency.formatAmountWithDecimals(customerDebtPurchases, isArabic)
+            )
+        }
+
         Card(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1665,9 +2206,12 @@ private fun ReportsTabContent(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 2x2 Grid
+                // 2x2 Grid of the four report types
                 val chunkedReports = reportTypes.chunked(2)
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.testTag("report_types_grid")
+                ) {
                     chunkedReports.forEach { rowPair ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1676,10 +2220,10 @@ private fun ReportsTabContent(
                             rowPair.forEach { (type, label) ->
                                 val isSelected = uiState.selectedReportType == type
                                 val icon = when (type) {
-                                    ReportType.COMPREHENSIVE_CUSTOMER -> Icons.Default.Person
-                                    ReportType.SALES_SUMMARY -> Icons.Default.ReceiptLong
                                     ReportType.DEBT_BALANCES -> Icons.Default.Assessment
-                                    ReportType.TAX_SUMMARY -> Icons.Default.TableChart
+                                    ReportType.SALES_AND_ITEMS -> Icons.Default.ReceiptLong
+                                    ReportType.TRANSACTIONS -> Icons.Default.TableChart
+                                    ReportType.COMPREHENSIVE_CUSTOMER -> Icons.Default.Person
                                 }
                                 Card(
                                     shape = RoundedCornerShape(12.dp),
@@ -1757,107 +2301,489 @@ private fun ReportsTabContent(
             }
         }
 
-        // 2. Warning if Comprehensive Customer Report selected but no customer picked
-        if (isComprehensiveCustomer && !customerIsSelected) {
+        // 2. Customer Selector below tiles ONLY when COMPREHENSIVE_CUSTOMER is selected
+        if (isComprehensiveCustomer) {
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = StatusRedBg),
-                border = BorderStroke(1.dp, StatusRed.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, GeoOutlineVariant),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("comprehensive_customer_warning_card")
+                    .testTag("report_customer_selector_container")
             ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = StatusRed,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (isArabic) StoreStrings.CUSTOMER_REQUIRED_FOR_REPORT_AR else StoreStrings.CUSTOMER_REQUIRED_FOR_REPORT_EN,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = StatusRed
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = GeoPrimary,
+                            modifier = Modifier.size(20.dp)
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isArabic) "يرجى تحديد العميل من شريط التحديد أعلاه أو بالضغط على الزر أدناه" else "Please select a customer to display statement and export",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = StatusRed
+                            text = if (isArabic) StoreStrings.CUSTOMER_CONTEXT_LABEL_AR else StoreStrings.CUSTOMER_CONTEXT_LABEL_EN,
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    Button(
-                        onClick = onSelectCustomerRequest,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
-                        modifier = Modifier.testTag("report_pick_customer_button")
-                    ) {
-                        Text(if (isArabic) "اختيار" else "Select")
+
+                    CustomerSelectorField(
+                        customers = customers,
+                        selectedCustomer = uiState.selectedCustomer,
+                        onCustomerSelected = { cust ->
+                            if (cust != null) {
+                                viewModel.selectCustomer(cust)
+                            } else {
+                                viewModel.clearCustomer()
+                            }
+                        },
+                        isArabic = isArabic,
+                        isRequired = true,
+                        allowAllCustomers = false,
+                        allCustomersLabel = if (isArabic) StoreStrings.SELECT_CUSTOMER_FOR_REPORT_AR else StoreStrings.SELECT_CUSTOMER_FOR_REPORT_EN,
+                        placeholderText = if (isArabic) StoreStrings.SELECT_CUSTOMER_FOR_REPORT_AR else StoreStrings.SELECT_CUSTOMER_FOR_REPORT_EN,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("report_pick_customer_button"),
+                        testTag = "report_comprehensive_customer_selector"
+                    )
+
+                    if (!customerIsSelected) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(StatusRedBg)
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                                .testTag("comprehensive_customer_warning_card")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = StatusRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isArabic) StoreStrings.CUSTOMER_REQUIRED_FOR_REPORT_AR else StoreStrings.CUSTOMER_REQUIRED_FOR_REPORT_EN,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = StatusRed
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // 3. KPI / Summary Cards for Comprehensive Report
-        if (isComprehensiveCustomer && customerIsSelected) {
-            val cust = uiState.selectedCustomer!!
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                border = BorderStroke(1.dp, GeoOutlineVariant),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("report_customer_summary_card")
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+        // 3. Dynamic Summary / KPI Cards for Each Report Type
+        when (uiState.selectedReportType) {
+            ReportType.DEBT_BALANCES -> {
+                // Store Balances & Debt Aging Summary card relocated to Home screen
+            }
+
+            ReportType.SALES_AND_ITEMS -> {
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, GeoOutlineVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("sales_items_summary_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            text = "${if (isArabic) "بيانات العميل: " else "Customer: "} ${cust.customerName}",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            text = if (isArabic) "ملخص فواتير المبيعات والأصناف ($periodLabel)" else "Sales Invoices & Items ($periodLabel)",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            text = cust.phone,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f).testTag("stat_cash_sales_invoices")
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = if (isArabic) "مبيعات كاش" else "Cash Sales",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = AppCurrency.formatAmountWithDecimals(totalCashSalesAmount, isArabic),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = StatusGreen
+                                    )
+                                    Text(
+                                        text = "${cashSalesInvoices.size} ${if (isArabic) "فاتورة" else "inv"}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
+
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f).testTag("stat_debt_sales_invoices")
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = if (isArabic) "مبيعات آجل" else "Debt Sales",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = AppCurrency.formatAmountWithDecimals(totalDebtSalesAmount, isArabic),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = StatusAmber
+                                    )
+                                    Text(
+                                        text = "${debtSalesInvoices.size} ${if (isArabic) "فاتورة" else "inv"}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f).testTag("stat_total_sales_amount")
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = if (isArabic) "إجمالي المبيعات" else "Total Sales",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = AppCurrency.formatAmountWithDecimals(totalSalesAmount, isArabic),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = GeoPrimary
+                                    )
+                                    Text(
+                                        text = "$totalInvoicesCount ${if (isArabic) "فاتورة" else "invoices"}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
+
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f).testTag("stat_items_profit_margin")
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = if (isArabic) "هامش الربح" else "Profit Margin",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = AppCurrency.formatAmountWithDecimals(totalItemProfitMargin, isArabic),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = StatusBlue
+                                    )
+                                    Text(
+                                        text = "${itemBreakdowns.size} ${if (isArabic) "أصناف" else "items"}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (itemBreakdowns.isEmpty()) {
                             Text(
-                                text = if (isArabic) "إجمالي المديونية" else "Total Debt",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = if (isArabic) "ملاحظة: لا توجد بنود أصناف تفصيلية مسجلة لمعاملات هذه الفترة."
+                                else "Note: No detailed product lines recorded for transactions in this period.",
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = String.format(Locale.US, "%,.2f %s", cust.totalDebt, currency),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = StatusRed
                             )
                         }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = if (isArabic) "الرصيد الصافي" else "Current Balance",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = String.format(Locale.US, "%,.2f %s", cust.balance, currency),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = if (cust.balance > 0) StatusRed else StatusGreen
-                            )
+                    }
+                }
+            }
+
+            ReportType.TRANSACTIONS -> {
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, GeoOutlineVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("transactions_summary_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = if (isArabic) "إجماليات المعاملات ($periodLabel)" else "Transactions Totals ($periodLabel)",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f).testTag("stat_tx_sum_cash")
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = if (isArabic) "إجمالي الكاش" else "Cash Sum",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = AppCurrency.formatAmountWithDecimals(totalTxCash, isArabic),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = StatusGreen
+                                    )
+                                }
+                            }
+
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f).testTag("stat_tx_sum_debt")
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = if (isArabic) "إجمالي الآجل" else "Debt Sum",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = AppCurrency.formatAmountWithDecimals(totalTxDebt, isArabic),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = StatusAmber
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f).testTag("stat_tx_sum_payments")
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = if (isArabic) "إجمالي المقبوضات" else "Payments Sum",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = AppCurrency.formatAmountWithDecimals(totalTxPayments, isArabic),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = StatusBlue
+                                    )
+                                }
+                            }
+
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                modifier = Modifier.weight(1f).testTag("stat_tx_total_count")
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                    Text(
+                                        text = if (isArabic) "عدد المعاملات" else "Count",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "${sortedTransactions.size}",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = GeoPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ReportType.COMPREHENSIVE_CUSTOMER -> {
+                if (customerIsSelected && selectedCustomer != null) {
+                    val cust = selectedCustomer
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, GeoOutlineVariant),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("report_customer_summary_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = cust.customerName,
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (cust.phone.isNotBlank()) {
+                                        Text(
+                                            text = cust.phone,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = if (isArabic) "الرصيد المستحق" else "Balance Due",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = AppCurrency.formatAmountWithDecimals(cust.balance, isArabic),
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = if (cust.balance > 0) StatusRed else StatusGreen
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = GeoOutlineVariant, thickness = 0.8.dp)
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                        Text(text = if (isArabic) "مشتريات كاش" else "Cash", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = AppCurrency.formatAmountWithDecimals(customerCashPurchases, isArabic), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = StatusGreen)
+                                    }
+                                }
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                        Text(text = if (isArabic) "مشتريات آجل" else "Debt", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = AppCurrency.formatAmountWithDecimals(customerDebtPurchases, isArabic), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = StatusAmber)
+                                    }
+                                }
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                        Text(text = if (isArabic) "تسديد" else "Payments", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(text = AppCurrency.formatAmountWithDecimals(customerPayments, isArabic), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = StatusBlue)
+                                    }
+                                }
+                            }
+
+                            if (singleCustomerAging != null && singleCustomerAging.currentDebt > 0) {
+                                Text(
+                                    text = if (isArabic) "أعمار ديون العميل (من تواريخ المعاملات الفعلية):" else "Customer Debt Aging:",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val custBuckets = listOf(
+                                        (if (isArabic) "0–30 يوم" else "0–30d") to singleCustomerAging.bucket0To30,
+                                        (if (isArabic) "31–60 يوم" else "31–60d") to singleCustomerAging.bucket31To60,
+                                        (if (isArabic) "61–90 يوم" else "61–90d") to singleCustomerAging.bucket61To90,
+                                        (if (isArabic) "+90 يوم" else "90+d") to singleCustomerAging.bucket90Plus
+                                    )
+                                    custBuckets.forEach { (bLabel, bAmt) ->
+                                        Card(
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (bAmt > 0) StatusRedBg else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                            ),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Text(text = bLabel, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                                Text(
+                                                    text = AppCurrency.formatAmount(bAmt),
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                                                    color = if (bAmt > 0) StatusRed else MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (customerItemBreakdowns.isNotEmpty()) {
+                                Text(
+                                    text = if (isArabic) "أكثر الأصناف طلباً لهذا العميل:" else "Most Requested Items:",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    customerItemBreakdowns.take(3).forEach { item ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = item.productName,
+                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "${item.totalQuantity} ${if (isArabic) "قطعة" else "pcs"} • ${AppCurrency.formatAmountWithDecimals(item.totalSales, isArabic)}",
+                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                color = GeoPrimary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1910,14 +2836,28 @@ private fun ReportsTabContent(
                             text = title,
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(if (idx == 1) 1.5f else 1f)
+                            modifier = Modifier.weight(if (idx == 1 || idx == 2) 1.2f else 1f)
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                if (previewRows.isEmpty()) {
+                if (isComprehensiveCustomer && !customerIsSelected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isArabic) StoreStrings.SELECT_CUSTOMER_FOR_REPORT_AR else StoreStrings.SELECT_CUSTOMER_FOR_REPORT_EN,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                } else if (previewRows.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1925,44 +2865,40 @@ private fun ReportsTabContent(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isArabic) "لا توجد بيانات متاحة للمعاينة" else "No data available for preview",
+                            text = if (isArabic) "لا توجد بيانات متاحة للمعاينة في هذه الفترة" else "No data available for preview in this period",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
-                    previewRows.take(12).forEachIndexed { idx, row ->
+                    previewRows.take(15).forEachIndexed { idx, row ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(if (idx % 2 == 1) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f) else Color.Transparent)
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                .testTag("report_row_$idx"),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = row.col1, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-                            Text(text = row.col2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1.5f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(text = row.col3, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
-                            Text(text = row.col4, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
+                            Text(text = row.col1, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(text = row.col2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1.2f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(text = row.col3, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1.2f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(text = row.col4, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f), textAlign = TextAlign.End)
                         }
+                    }
+                    if (previewRows.size > 15) {
+                        Text(
+                            text = if (isArabic) "+ ${previewRows.size - 15} سجلات إضافية في ملف التصدير" else "+ ${previewRows.size - 15} more records in exported file",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                 }
             }
         }
 
-        // 5. Action Buttons (Export PDF, CSV, Print, Share)
-        val canExport = !isComprehensiveCustomer || customerIsSelected
-
-        val reportTitle = if (isArabic) {
-            when (uiState.selectedReportType) {
-                ReportType.COMPREHENSIVE_CUSTOMER -> "تقرير العميل الشامل - ${uiState.selectedCustomer?.customerName ?: ""}"
-                ReportType.SALES_SUMMARY -> "تقرير ملخص المبيعات"
-                ReportType.DEBT_BALANCES -> "تقرير أرصدة الديون"
-                ReportType.TAX_SUMMARY -> "تقرير ضريبة القيمة المضافة"
-            }
-        } else {
-            uiState.selectedReportType.name.replace("_", " ")
-        }
-
+        // 5. Centralized Export Action Bar (PDF, CSV, Print, Share)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1975,9 +2911,9 @@ private fun ReportsTabContent(
                             context = context,
                             fileName = "Report_${System.currentTimeMillis()}.pdf",
                             title = reportTitle,
-                            storeName = storeInfo.storeName,
-                            subtitle = if (isArabic) "تم التصدير من سمول ستور" else "Exported from SmallStore",
-                            kpis = listOf("Total Rows" to "${previewRows.size}"),
+                            storeName = storeInfo.storeName.ifBlank { if (isArabic) "سمول ستور" else "SmallStore" },
+                            subtitle = if (isArabic) "الفترة: $periodLabel" else "Period: $periodLabel",
+                            kpis = exportKpis,
                             headers = tableHeaders,
                             rows = previewRows
                         )
@@ -2016,7 +2952,7 @@ private fun ReportsTabContent(
             ) {
                 Icon(Icons.Default.Download, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(text = if (isArabic) "CSV" else "CSV", color = GeoPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(text = "CSV", color = GeoPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
 
             // Print HTML
@@ -2025,9 +2961,9 @@ private fun ReportsTabContent(
                     if (canExport) {
                         val html = ReportExporter.generateReportHtml(
                             title = reportTitle,
-                            storeName = storeInfo.storeName,
-                            subtitle = if (isArabic) "سمول ستور للتقارير" else "SmallStore Reports",
-                            kpis = listOf((if (isArabic) "عدد السجلات" else "Records") to "${previewRows.size}"),
+                            storeName = storeInfo.storeName.ifBlank { if (isArabic) "سمول ستور" else "SmallStore" },
+                            subtitle = if (isArabic) "الفترة: $periodLabel" else "Period: $periodLabel",
+                            kpis = exportKpis,
                             headers = tableHeaders,
                             rows = previewRows,
                             isArabic = isArabic
@@ -2052,14 +2988,15 @@ private fun ReportsTabContent(
                 onClick = {
                     if (canExport) {
                         val shareText = buildString {
-                            appendLine("SmallStore - ${storeInfo.storeName}")
+                            appendLine("SmallStore - ${storeInfo.storeName.ifBlank { "Store" }}")
                             appendLine(reportTitle)
+                            appendLine("Period / الفترة: $periodLabel")
                             appendLine(tableHeaders.joinToString(" | "))
-                            previewRows.take(10).forEach { r ->
+                            previewRows.take(15).forEach { r ->
                                 appendLine("${r.col1} | ${r.col2} | ${r.col3} | ${r.col4}")
                             }
-                            if (previewRows.size > 10) {
-                                appendLine("... (+${previewRows.size - 10} more)")
+                            if (previewRows.size > 15) {
+                                appendLine("... (+${previewRows.size - 15} more)")
                             }
                         }
                         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -2084,152 +3021,4 @@ private fun ReportsTabContent(
 
         Spacer(modifier = Modifier.height(24.dp))
     }
-}
-
-// -------------------------------------------------------------
-// CUSTOMER PICKER MODAL
-// -------------------------------------------------------------
-@Composable
-private fun CustomerPickerModal(
-    customers: List<CustomerAccount>,
-    selectedCustomerId: String?,
-    isArabic: Boolean,
-    onDismiss: () -> Unit,
-    onSelect: (CustomerAccount) -> Unit,
-    onSelectAll: () -> Unit
-) {
-    val focusManager = LocalFocusManager.current
-    var search by remember { mutableStateOf("") }
-    val filtered = remember(customers, search) {
-        if (search.isBlank()) customers
-        else customers.filter { it.customerName.contains(search, ignoreCase = true) || it.phone.contains(search) }
-    }
-
-    AlertDialog(
-        onDismissRequest = {
-            focusManager.clearFocus()
-            onDismiss()
-        },
-        title = {
-            Text(
-                text = if (isArabic) "اختيار العميل" else "Select Customer",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-            )
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = search,
-                    onValueChange = { search = it },
-                    placeholder = { Text(if (isArabic) "بحث بالاسم أو الهاتف..." else "Search name or phone...", fontSize = 12.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp)
-                        .testTag("customer_picker_search")
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // "All Customers" option
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (selectedCustomerId == null) GeoPrimary.copy(alpha = 0.12f) else Color.Transparent)
-                        .clickable {
-                            focusManager.clearFocus()
-                            onSelectAll()
-                        }
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                        .testTag("customer_picker_all_option"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = if (isArabic) StoreStrings.ALL_CUSTOMERS_AR else StoreStrings.ALL_CUSTOMERS_EN,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = if (selectedCustomerId == null) FontWeight.Bold else FontWeight.Medium,
-                            color = if (selectedCustomerId == null) GeoPrimary else MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-                    if (selectedCustomerId == null) {
-                        Icon(Icons.Default.Check, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(18.dp))
-                    }
-                }
-
-                HorizontalDivider(color = GeoOutlineVariant, modifier = Modifier.padding(vertical = 4.dp))
-
-                if (filtered.isEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = if (isArabic) "لا يوجد عملاء مطابقون" else "No matching customers found",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 240.dp)
-                    ) {
-                        items(filtered, key = { it.id }) { customer ->
-                            val isSelected = customer.id == selectedCustomerId
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) GeoPrimary.copy(alpha = 0.12f) else Color.Transparent)
-                                    .clickable {
-                                        focusManager.clearFocus()
-                                        onSelect(customer)
-                                    }
-                                    .padding(horizontal = 12.dp, vertical = 9.dp)
-                                    .testTag("customer_picker_item_${customer.id}"),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = customer.customerName,
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    )
-                                    Text(
-                                        text = customer.phone,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (isSelected) {
-                                    Icon(Icons.Default.Check, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = {
-                focusManager.clearFocus()
-                onDismiss()
-            }) {
-                Text(if (isArabic) "إغلاق" else "Close", color = GeoPrimary)
-            }
-        },
-        shape = RoundedCornerShape(16.dp),
-        containerColor = MaterialTheme.colorScheme.surface
-    )
 }

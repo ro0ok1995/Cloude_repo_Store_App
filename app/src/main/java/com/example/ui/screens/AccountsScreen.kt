@@ -44,13 +44,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.AccountFilter
 import com.example.model.AccountSortOption
+import com.example.model.AppCurrency
 import com.example.model.CustomerAccount
 import com.example.model.LanguageMode
 import com.example.model.SettlementType
@@ -97,14 +96,13 @@ fun AccountsScreen(
     onSearchQueryChange: (String) -> Unit,
     onFilterChange: (AccountFilter) -> Unit,
     onCustomerClick: (CustomerAccount) -> Unit,
-    onCloseCustomerDetails: () -> Unit,
     onOpenAddCustomerDialog: () -> Unit,
     onCloseAddCustomerDialog: () -> Unit,
     onAddCustomer: (name: String, phone: String, initialDebt: Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
-    val currency = if (isArabic) "ر.س" else "SAR"
+    val currency = AppCurrency.SYMBOL
     val focusManager = LocalFocusManager.current
 
     var sortOption by remember { mutableStateOf(AccountSortOption.DEFAULT) }
@@ -124,13 +122,6 @@ fun AccountsScreen(
                 transactions.filter {
                     it.customerName == customer.customerName && !it.isCredit &&
                     (it.activityType.contains("شراء كاش") || it.activityType.contains("Cash") || (!it.activityType.contains("تسديد") && !it.activityType.contains("Payment")))
-                }.sumOf { it.amount }
-            }
-            AccountSortOption.HIGHEST_INSTALLMENTS -> accounts.sortedByDescending { customer ->
-                transactions.filter {
-                    it.customerName == customer.customerName &&
-                    (it.activityType.contains("تسديد") || it.activityType.contains("Payment")) &&
-                    it.settlementType == SettlementType.PARTIAL
                 }.sumOf { it.amount }
             }
         }
@@ -362,23 +353,6 @@ fun AccountsScreen(
                     ),
                     modifier = Modifier.testTag("sort_highest_cash")
                 )
-                FilterChip(
-                    selected = sortOption == AccountSortOption.HIGHEST_INSTALLMENTS,
-                    onClick = { sortOption = AccountSortOption.HIGHEST_INSTALLMENTS },
-                    label = {
-                        Text(
-                            text = if (isArabic) StoreStrings.SORT_HIGHEST_INSTALLMENTS_AR else StoreStrings.SORT_HIGHEST_INSTALLMENTS_EN,
-                            fontSize = 11.sp,
-                            fontWeight = if (sortOption == AccountSortOption.HIGHEST_INSTALLMENTS) FontWeight.Bold else FontWeight.Normal
-                        )
-                    },
-                    shape = RoundedCornerShape(8.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    modifier = Modifier.testTag("sort_highest_installments")
-                )
             }
         }
 
@@ -463,24 +437,6 @@ fun AccountsScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
-        }
-    }
-
-    if (selectedCustomerDetails != null) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = onCloseCustomerDetails,
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-            modifier = Modifier.testTag("customer_details_sheet")
-        ) {
-            CustomerDetailsContent(
-                customer = selectedCustomerDetails,
-                currency = currency,
-                isArabic = isArabic,
-                onClose = onCloseCustomerDetails
-            )
         }
     }
 
@@ -602,158 +558,6 @@ private fun CustomerCardItem(
                 modifier = Modifier.size(18.dp)
             )
         }
-    }
-}
-
-@Composable
-private fun CustomerDetailsContent(
-    customer: CustomerAccount,
-    currency: String,
-    isArabic: Boolean,
-    onClose: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = if (isArabic) StoreStrings.CUSTOMER_DETAILS_AR else StoreStrings.CUSTOMER_DETAILS_EN,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Close",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(14.dp))
-        Card(
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = GeoPrimary.copy(alpha = 0.12f),
-                        shape = CircleShape,
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = customer.customerName.take(1),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = GeoPrimary
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = customer.customerName,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (customer.phone.isNotBlank()) {
-                            Text(
-                                text = customer.phone,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = if (isArabic) StoreStrings.TOTAL_BALANCE_AR else StoreStrings.TOTAL_BALANCE_EN,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = String.format(Locale.US, "%,.2f %s", customer.balance, currency),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = if (customer.balance > 0) StatusRed else StatusGreen
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = if (isArabic) StoreStrings.TOTAL_DEBT_AR else StoreStrings.TOTAL_DEBT_EN,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = String.format(Locale.US, "%,.2f %s", customer.totalDebt, currency),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = StatusRed
-                        )
-                    }
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedButton(
-                onClick = onClose,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .testTag("details_account_statement_button")
-            ) {
-                Text(
-                    text = if (isArabic) StoreStrings.ACCOUNT_STATEMENT_AR else StoreStrings.ACCOUNT_STATEMENT_EN,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Button(
-                onClick = onClose,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .testTag("details_settlement_button")
-            ) {
-                Text(
-                    text = if (isArabic) StoreStrings.SETTLEMENT_AR else StoreStrings.SETTLEMENT_EN,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(20.dp))
     }
 }
 

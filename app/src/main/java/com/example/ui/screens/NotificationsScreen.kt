@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AppCurrency
 import com.example.model.LanguageMode
 import com.example.model.NotificationItem
 import com.example.model.StoreStrings
@@ -68,7 +69,7 @@ fun NotificationsScreen(
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
-    val currency = if (isArabic) "ر.س" else "SAR"
+    val currency = AppCurrency.SYMBOL
 
     LaunchedEffect(Unit) {
         onViewNotifications()

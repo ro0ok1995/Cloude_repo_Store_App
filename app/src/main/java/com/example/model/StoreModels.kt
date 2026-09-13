@@ -61,8 +61,7 @@ enum class AccountFilter {
 enum class AccountSortOption {
     DEFAULT,
     HIGHEST_DEBT,
-    HIGHEST_CASH,
-    HIGHEST_INSTALLMENTS
+    HIGHEST_CASH
 }
 
 enum class SettlementType {
@@ -133,8 +132,28 @@ object StoreStrings {
     const val SETTLEMENT_AR = "المحاسبة"
     const val CUSTOMER_DETAILS_EN = "Customer Details"
     const val CUSTOMER_DETAILS_AR = "تفاصيل العميل"
+    const val CUSTOMERS_EN = "Customers"
+    const val CUSTOMERS_AR = "العملاء"
+    const val CUSTOMER_PROFILE_EN = "Customer Profile"
+    const val CUSTOMER_PROFILE_AR = "ملف الزبون"
+    const val BASIC_ACTIONS_EN = "Basic Actions"
+    const val BASIC_ACTIONS_AR = "العمليات الأساسية"
+    const val RECORD_PURCHASE_EN = "Record Purchase"
+    const val RECORD_PURCHASE_AR = "تسجيل مشتريات"
+    const val VIEW_ACCOUNT_STATEMENT_EN = "View Account Statement"
+    const val VIEW_ACCOUNT_STATEMENT_AR = "عرض كشف الحساب"
+    const val RECORD_PAYMENT_EN = "Record Payment"
+    const val RECORD_PAYMENT_AR = "تسجيل دفعة سداد"
     const val ANALYSIS_CENTER_EN = "Analysis Center"
     const val ANALYSIS_CENTER_AR = "مركز التحليل"
+
+    // Volume & Debt Breakdown Chart Tabs
+    const val CHART_TAB_DONUT_EN = "Donut"
+    const val CHART_TAB_DONUT_AR = "دائري"
+    const val CHART_TAB_COLUMN_EN = "Column"
+    const val CHART_TAB_COLUMN_AR = "عمودي"
+    const val CHART_TAB_COMBO_EN = "Combo"
+    const val CHART_TAB_COMBO_AR = "مركب"
 
     // Notifications specific
     const val NO_NOTIFICATIONS_EN = "No notifications yet"
@@ -449,6 +468,10 @@ object StoreStrings {
     const val TRANSACTION_TOTAL_AR = "إجمالي المعاملة"
     const val AMOUNT_LIMIT_HELPER_EN = "The amount entered cannot exceed transaction total"
     const val AMOUNT_LIMIT_HELPER_AR = "المبلغ المدخل لا يمكن أن يتجاوز إجمالي المعاملة"
+    const val CONFIRM_PAYMENT_EN = "Confirm Payment"
+    const val CONFIRM_PAYMENT_AR = "تأكيد التسديد"
+    const val PAYMENT_EXCEEDS_DEBT_ERROR_EN = "The payment amount cannot exceed the outstanding balance"
+    const val PAYMENT_EXCEEDS_DEBT_ERROR_AR = "لا يمكن أن يتجاوز مبلغ التسديد الرصيد المستحق"
 
     // Settlement Bottom Sheet specific
     const val CASH_AMOUNT_LABEL_EN = "Cash Amount"
@@ -508,8 +531,8 @@ object StoreStrings {
     const val PERIOD_UNLOCKED_CAPTION_EN = "Each tab has its own period."
     const val PERIOD_UNLOCKED_CAPTION_AR = "لكل تبويب فترته الزمنية الخاصة."
 
-    const val REPORT_COMPREHENSIVE_CUSTOMER_EN = "Comprehensive customer report"
-    const val REPORT_COMPREHENSIVE_CUSTOMER_AR = "تقرير شامل للعميل"
+    const val REPORT_COMPREHENSIVE_CUSTOMER_EN = "Comprehensive Customer Report"
+    const val REPORT_COMPREHENSIVE_CUSTOMER_AR = "التقرير المخصص الشامل"
     const val REPORT_COMPREHENSIVE_CUSTOMER_DESC_EN = "Unified comprehensive customer statement including purchases, payments, balance and debt aging"
     const val REPORT_COMPREHENSIVE_CUSTOMER_DESC_AR = "تقرير كشف حساب تفصيلي شامل للعميل متضمناً المشتريات، المدفوعات، الأرصدة وتاريخ الديون"
 
@@ -536,8 +559,7 @@ object StoreStrings {
     const val EXPORT_STATEMENT_AR = "تصدير"
     const val SHARE_STATEMENT_EN = "Share"
     const val SHARE_STATEMENT_AR = "مشاركة"
-    const val CURRENCY_SAR_EN = "SAR"
-    const val CURRENCY_SAR_AR = "ر.س"
+    const val CURRENCY_SYMBOL = AppCurrency.SYMBOL
 
     const val EXPORT_CSV_SUCCESS_EN = "Statement exported as CSV successfully"
     const val EXPORT_CSV_SUCCESS_AR = "تم تصدير كشف الحساب بصيغة CSV بنجاح"
@@ -553,16 +575,19 @@ object StoreStrings {
     const val CONTACT_SUPPORT_TITLE_AR = "الدعم الفني والمساندة"
     const val CONTACT_SUPPORT_DEVELOPER_EN = "Developer & Technical Support"
     const val CONTACT_SUPPORT_DEVELOPER_AR = "فريق التطوير والمساعدة الفنية"
-    const val CONTACT_SUPPORT_NAME = "MrGazawe"
-    const val CONTACT_SUPPORT_PHONE_LABEL_EN = "Phone Number"
-    const val CONTACT_SUPPORT_PHONE_LABEL_AR = "رقم الهاتف المباشر"
-    const val CONTACT_SUPPORT_PHONE = "0592727830"
+    const val CONTACT_SUPPORT_NAME = "MrGazawe Studio"
+    const val CONTACT_SUPPORT_PHONE_LABEL_EN = "WhatsApp"
+    const val CONTACT_SUPPORT_PHONE_LABEL_AR = "واتساب"
+    const val CONTACT_SUPPORT_PHONE = "+972592727830"
+    const val CONTACT_SUPPORT_EMAIL = "ro0ok1995@gmail.com"
+    const val CONTACT_SUPPORT_DESC_AR = "على استعداد لتنفيذ طلبات برامج خاصة على الطلب."
+    const val CONTACT_SUPPORT_DESC_EN = "Available to develop custom software and applications on request."
     const val CONTACT_SUPPORT_CALL_EN = "Call"
     const val CONTACT_SUPPORT_CALL_AR = "اتصال"
-    const val CONTACT_SUPPORT_COPY_EN = "Copy Number"
-    const val CONTACT_SUPPORT_COPY_AR = "نسخ الرقم"
-    const val CONTACT_SUPPORT_COPIED_EN = "Phone number copied to clipboard"
-    const val CONTACT_SUPPORT_COPIED_AR = "تم نسخ رقم الهاتف للحافظة"
+    const val CONTACT_SUPPORT_COPY_EN = "Copy"
+    const val CONTACT_SUPPORT_COPY_AR = "نسخ"
+    const val CONTACT_SUPPORT_COPIED_EN = "Copied to clipboard"
+    const val CONTACT_SUPPORT_COPIED_AR = "تم النسخ إلى الحافظة"
 
     // Home Screen Stats Redesign
     const val STAT_DEBT_CREDIT_EN = "Debt"
@@ -571,8 +596,6 @@ object StoreStrings {
     const val STAT_CASH_SALES_AR = "كاش"
     const val STAT_PAYMENTS_RECEIVED_EN = "Payment"
     const val STAT_PAYMENTS_RECEIVED_AR = "دفعة"
-    const val STAT_INSTALLMENTS_EN = "Installment"
-    const val STAT_INSTALLMENTS_AR = "قسط"
 
     // Accounts Screen Sort
     const val SORT_DEFAULT_AR = "الافتراضي"
@@ -581,16 +604,16 @@ object StoreStrings {
     const val SORT_HIGHEST_DEBT_EN = "Highest Debt"
     const val SORT_HIGHEST_CASH_AR = "الأعلى كاش"
     const val SORT_HIGHEST_CASH_EN = "Highest Cash"
-    const val SORT_HIGHEST_INSTALLMENTS_AR = "الأعلى أقساط"
-    const val SORT_HIGHEST_INSTALLMENTS_EN = "Highest Installments"
 
     // Analysis Center & General App Strings
     const val APP_NAME_AR = "سمول ستور"
     const val APP_NAME_EN = "SmallStore"
     const val STORE_INFORMATION_AR = "معلومات المتجر"
     const val STORE_INFORMATION_EN = "Store Information"
-    const val ABOUT_SMALLSTORE_AR = "حول التطبيق"
-    const val ABOUT_SMALLSTORE_EN = "About the App"
+    const val ABOUT_SMALLSTORE_AR = "حول سمول ستور"
+    const val ABOUT_SMALLSTORE_EN = "About SmallStore"
+    const val ABOUT_APP_SUMMARY_AR = "تطبيق متكامل لإدارة حسابات المتاجر الصغيرة ومتابعة ديون العملاء والمبيعات النقدية والآجلة والتقارير المالية دون الحاجة للاتصال بالإنترنت."
+    const val ABOUT_APP_SUMMARY_EN = "Comprehensive retail management app for tracking customer debts, cash and credit purchases, instant payments, and detailed financial reports offline."
     const val PRIVACY_POLICY_AR = "سياسة الخصوصية"
     const val PRIVACY_POLICY_EN = "Privacy Policy"
     const val TERMS_OF_USE_AR = "شروط الاستخدام"
@@ -607,14 +630,12 @@ object StoreStrings {
     const val STAT_TOTAL_SALES_EN = "Total Sales"
     const val TX_FILTER_ALL_AR = "الكل"
     const val TX_FILTER_ALL_EN = "All"
-    const val REPORT_SALES_SUMMARY_AR = "تقرير المبيعات والفواتير"
-    const val REPORT_SALES_SUMMARY_EN = "Sales & Invoices Report"
+    const val REPORT_SALES_AND_ITEMS_AR = "تقرير المبيعات للأصناف والفواتير"
+    const val REPORT_SALES_AND_ITEMS_EN = "Sales, Items & Invoices Report"
     const val REPORT_DEBT_BALANCES_AR = "تقرير أرصدة العملاء والديون"
     const val REPORT_DEBT_BALANCES_EN = "Customer Debt Balances Report"
     const val REPORT_TRANSACTIONS_AR = "تقرير المعاملات"
     const val REPORT_TRANSACTIONS_EN = "Transactions Report"
-    const val REPORT_TAX_SUMMARY_AR = "تقرير الضريبة والزكاة"
-    const val REPORT_TAX_SUMMARY_EN = "Tax & Zakat Summary"
     const val SELECT_REPORT_TYPE_AR = "اختر نوع التقرير"
     const val SELECT_REPORT_TYPE_EN = "Select Report Type"
     const val CUSTOMER_REQUIRED_FOR_REPORT_AR = "اختيار عميل مطلوب لتقرير العميل الشامل"
@@ -625,6 +646,12 @@ object StoreStrings {
     const val EXPORT_PDF_EN = "Export PDF"
     const val PRINT_REPORT_AR = "طباعة"
     const val PRINT_REPORT_EN = "Print"
+    const val STORE_DEBT_AGING_SUMMARY_AR = "ملخص مديونيات المتجر وأعمار الديون"
+    const val STORE_DEBT_AGING_SUMMARY_EN = "Store Balances & Debt Aging Summary"
+    const val DEBT_AGING_BUCKETS_TITLE_AR = "توزيع أعمار الديون (حسب تواريخ المعاملات الفعلية):"
+    const val DEBT_AGING_BUCKETS_TITLE_EN = "Debt Aging Buckets (From Actual Dates):"
+    const val IN_DEBT_CUSTOMERS_AR = "العملاء المدينون"
+    const val IN_DEBT_CUSTOMERS_EN = "In Debt"
 }
 
 data class ProductItem(
@@ -632,7 +659,8 @@ data class ProductItem(
     val name: String,
     val price: Double,
     val category: String = "عام",
-    val unit: String = "حبة"
+    val unit: String = "حبة",
+    val costPrice: Double = 0.0
 )
 
 data class CartItem(
