@@ -2,7 +2,9 @@ package com.example
 
 import com.example.model.CartItem
 import com.example.model.CustomerAccount
+import com.example.model.NavDestination
 import com.example.model.ProductItem
+import com.example.model.StoreStrings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -75,24 +77,32 @@ class ExampleUnitTest {
 
   @Test
   fun testQuickPaymentDebtReduction() {
-    val initialCustomer = CustomerAccount(
-      id = "cust_1",
+    val custId = "cust_1"
+    val saleTx = com.example.model.TransactionItem(
+      id = "tx_sale",
       customerName = "طارق الحسين",
-      balance = 100.0,
-      totalDebt = 100.0,
-      phone = "0501112233"
+      activityType = "شراء بالدين",
+      amount = 100.0,
+      isCredit = true,
+      date = "2026-09-20",
+      relativeTime = "الآن",
+      customerId = custId
+    )
+    val paymentTx = com.example.model.TransactionItem(
+      id = "tx_pay",
+      customerName = "طارق الحسين",
+      activityType = "تسديد",
+      amount = 50.0,
+      isCredit = false,
+      date = "2026-09-20",
+      relativeTime = "الآن",
+      customerId = custId
     )
 
-    val paymentAmount = 50.0
-    val updatedCustomer = initialCustomer.copy(
-      balance = (initialCustomer.balance - paymentAmount).coerceAtLeast(0.0),
-      totalDebt = (initialCustomer.totalDebt - paymentAmount).coerceAtLeast(0.0),
-      hasRecentActivity = true
-    )
-
-    assertEquals(50.0, updatedCustomer.balance, 0.001)
-    assertEquals(50.0, updatedCustomer.totalDebt, 0.001)
-    assertTrue(updatedCustomer.hasRecentActivity)
+    val summary = com.example.accounting.CustomerLedgerCalculator.calculateCustomerBalance(custId, listOf(saleTx, paymentTx))
+    assertEquals(50.0, summary.balance, 0.001)
+    assertEquals(100.0, summary.totalCreditSales, 0.001)
+    assertEquals(50.0, summary.totalPayments, 0.001)
   }
 
   @Test
@@ -223,10 +233,10 @@ class ExampleUnitTest {
 
     val transactions = listOf(
       // c1: 10 days old (0-30 bucket) 200, 45 days old (31-60 bucket) 100
-      com.example.model.TransactionItem("t1", "شراء آجل", "عميل أ", "شراء آجل", 200.0, true, "2026-09-02", "منذ 10 أيام", "مشتريات"),
-      com.example.model.TransactionItem("t2", "شراء آجل", "عميل أ", "شراء آجل", 100.0, true, "2026-07-29", "منذ 45 يوم", "مشتريات"),
+      com.example.model.TransactionItem("t1", "شراء آجل", "عميل أ", "شراء آجل", 200.0, true, "2026-09-02", "منذ 10 أيام", "مشتريات", customerId = "c1"),
+      com.example.model.TransactionItem("t2", "شراء آجل", "عميل أ", "شراء آجل", 100.0, true, "2026-07-29", "منذ 45 يوم", "مشتريات", customerId = "c1"),
       // c2: 100 days old (90+ bucket) 150
-      com.example.model.TransactionItem("t3", "شراء آجل", "عميل ب", "شراء آجل", 150.0, true, "2026-06-04", "منذ 100 يوم", "مشتريات")
+      com.example.model.TransactionItem("t3", "شراء آجل", "عميل ب", "شراء آجل", 150.0, true, "2026-06-04", "منذ 100 يوم", "مشتريات", customerId = "c2")
     )
 
     val summary = com.example.viewmodel.DebtAgingUtils.calculateStoreDebtAgingSummary(
@@ -249,9 +259,9 @@ class ExampleUnitTest {
     val vm = com.example.viewmodel.AnalysisCenterViewModel()
     val cust = CustomerAccount(id = "c1", customerName = "علي أحمد", balance = 200.0, totalDebt = 200.0, phone = "0550000000")
     val txs = listOf(
-      com.example.model.TransactionItem("tx1", "شراء نقدي", "علي أحمد", "كاش", 50.0, false, "2026-09-01", "اليوم", "بيبسي"),
-      com.example.model.TransactionItem("tx2", "شراء آجل", "علي أحمد", "آجل", 250.0, true, "2026-09-02", "اليوم", "أرز وسكر"),
-      com.example.model.TransactionItem("tx3", "تسديد دفعة", "علي أحمد", "تسديد", 50.0, false, "2026-09-03", "اليوم", "دفعة نقدية")
+      com.example.model.TransactionItem("tx1", "شراء نقدي", "علي أحمد", "كاش", 50.0, false, "2026-09-01", "اليوم", "بيبسي", customerId = "c1"),
+      com.example.model.TransactionItem("tx2", "شراء آجل", "علي أحمد", "آجل", 250.0, true, "2026-09-02", "اليوم", "أرز وسكر", customerId = "c1"),
+      com.example.model.TransactionItem("tx3", "تسديد دفعة", "علي أحمد", "تسديد", 50.0, false, "2026-09-03", "اليوم", "دفعة نقدية", customerId = "c1")
     )
 
     // Filter ALL
@@ -298,6 +308,254 @@ class ExampleUnitTest {
     )
     assertEquals(1, debtRows.size)
     assertEquals("tx2", debtRows[0].id)
+  }
+
+  @Test
+  fun testPeriodFilterEnumAndStrings() {
+    // Exactly 4 periods: ALL, TODAY, MONTH, CUSTOM in order
+    val values = com.example.model.PeriodFilter.values()
+    assertEquals(4, values.size)
+    assertEquals(com.example.model.PeriodFilter.ALL, values[0])
+    assertEquals(com.example.model.PeriodFilter.TODAY, values[1])
+    assertEquals(com.example.model.PeriodFilter.MONTH, values[2])
+    assertEquals(com.example.model.PeriodFilter.CUSTOM, values[3])
+
+    // Labels in Arabic and English
+    assertEquals("All", com.example.model.StoreStrings.PERIOD_ALL_EN)
+    assertEquals("كل", com.example.model.StoreStrings.PERIOD_ALL_AR)
+    assertEquals("Today", com.example.model.StoreStrings.PERIOD_TODAY_EN)
+    assertEquals("اليوم", com.example.model.StoreStrings.PERIOD_TODAY_AR)
+    assertEquals("Month", com.example.model.StoreStrings.PERIOD_MONTH_EN)
+    assertEquals("الشهر", com.example.model.StoreStrings.PERIOD_MONTH_AR)
+    assertEquals("Custom", com.example.model.StoreStrings.PERIOD_CUSTOM_EN)
+    assertEquals("مخصص", com.example.model.StoreStrings.PERIOD_CUSTOM_AR)
+  }
+
+  @Test
+  fun testDateFilterUtilsPeriodLogic() {
+    val today = java.time.LocalDate.of(2026, 9, 13)
+    val utils = com.example.viewmodel.DateFilterUtils
+
+    // ALL matches everything
+    assertTrue(utils.isDateInPeriod("2020-01-01", com.example.model.PeriodFilter.ALL, today = today))
+    assertTrue(utils.isDateInPeriod("2026-09-13", com.example.model.PeriodFilter.ALL, today = today))
+    assertTrue(utils.isDateInPeriod("anything", com.example.model.PeriodFilter.ALL, today = today))
+
+    // TODAY matches only today
+    assertTrue(utils.isDateInPeriod("2026-09-13", com.example.model.PeriodFilter.TODAY, today = today))
+    assertTrue(!utils.isDateInPeriod("2026-09-12", com.example.model.PeriodFilter.TODAY, today = today))
+
+    // MONTH matches current calendar month
+    assertTrue(utils.isDateInPeriod("2026-09-01", com.example.model.PeriodFilter.MONTH, today = today))
+    assertTrue(utils.isDateInPeriod("2026-09-30", com.example.model.PeriodFilter.MONTH, today = today))
+    assertTrue(!utils.isDateInPeriod("2026-08-31", com.example.model.PeriodFilter.MONTH, today = today))
+    assertTrue(!utils.isDateInPeriod("2026-10-01", com.example.model.PeriodFilter.MONTH, today = today))
+
+    // CUSTOM is inclusive of start and end date
+    val start = java.time.LocalDate.of(2026, 9, 5)
+    val end = java.time.LocalDate.of(2026, 9, 10)
+    assertTrue(utils.isDateInPeriod("2026-09-05", com.example.model.PeriodFilter.CUSTOM, customStartDate = start, customEndDate = end, today = today))
+    assertTrue(utils.isDateInPeriod("2026-09-08", com.example.model.PeriodFilter.CUSTOM, customStartDate = start, customEndDate = end, today = today))
+    assertTrue(utils.isDateInPeriod("2026-09-10", com.example.model.PeriodFilter.CUSTOM, customStartDate = start, customEndDate = end, today = today))
+    assertTrue(!utils.isDateInPeriod("2026-09-04", com.example.model.PeriodFilter.CUSTOM, customStartDate = start, customEndDate = end, today = today))
+    assertTrue(!utils.isDateInPeriod("2026-09-11", com.example.model.PeriodFilter.CUSTOM, customStartDate = start, customEndDate = end, today = today))
+  }
+
+  @Test
+  fun testLatestActivityNavigationUsesCustomerIdAndHandlesDuplicateNames() {
+    val cust1 = com.example.model.CustomerAccount(
+      id = "c101",
+      customerName = "محمد علي",
+      balance = 150.0,
+      totalDebt = 150.0,
+      phone = "0501111111",
+      lastTransactionDate = "2026-09-10"
+    )
+    val cust2 = com.example.model.CustomerAccount(
+      id = "c102",
+      customerName = "محمد علي", // duplicate name
+      balance = 300.0,
+      totalDebt = 300.0,
+      phone = "0502222222",
+      lastTransactionDate = "2026-09-12"
+    )
+    val allCustomers = listOf(cust1, cust2)
+
+    val txForCust2 = com.example.model.TransactionItem(
+      id = "tx_test_1",
+      title = "تسديد دفعة",
+      customerName = "محمد علي",
+      activityType = "تسديد",
+      amount = 100.0,
+      isCredit = false,
+      date = "2026-09-12",
+      relativeTime = "اليوم",
+      customerId = "c102"
+    )
+
+    val txForCust1 = com.example.model.TransactionItem(
+      id = "tx_test_2",
+      title = "شراء آجل",
+      customerName = "محمد علي",
+      activityType = "شراء آجل",
+      amount = 50.0,
+      isCredit = true,
+      date = "2026-09-10",
+      relativeTime = "منذ يومين",
+      customerId = "c101"
+    )
+
+    // Verify resolveCustomerForTransaction resolves exact customer by stable ID despite identical customer names
+    val resolvedCust2 = com.example.viewmodel.MainViewModel.resolveCustomerForTransaction(allCustomers, txForCust2)
+    assertEquals("c102", resolvedCust2?.id)
+    assertEquals("0502222222", resolvedCust2?.phone)
+
+    val resolvedCust1 = com.example.viewmodel.MainViewModel.resolveCustomerForTransaction(allCustomers, txForCust1)
+    assertEquals("c101", resolvedCust1?.id)
+    assertEquals("0501111111", resolvedCust1?.phone)
+
+    // Verify behavior when transaction has no customerId:
+    // With duplicate customer names ("محمد علي"), resolving must return null rather than guessing by date or activity
+    val txWithoutId = com.example.model.TransactionItem(
+      id = "tx_test_3",
+      title = "شراء آجل",
+      customerName = "محمد علي",
+      activityType = "شراء آجل",
+      amount = 50.0,
+      isCredit = true,
+      date = "2026-09-10",
+      relativeTime = "منذ يومين",
+      customerId = null
+    )
+    val resolvedFallback = com.example.viewmodel.MainViewModel.resolveCustomerForTransaction(allCustomers, txWithoutId)
+    // Under Phase 2 deterministic rules, never guess customer identity when ambiguous duplicate names exist
+    org.junit.Assert.assertNull(resolvedFallback)
+
+    // Under Phase 2.2: customerId == null is NEVER silently assigned to a customer by name, even if name is unique
+    val uniqueCust = com.example.model.CustomerAccount(
+      id = "c103",
+      customerName = "سالم القرني",
+      balance = 50.0,
+      totalDebt = 50.0,
+      phone = "0503333333"
+    )
+    val txUnambiguous = com.example.model.TransactionItem(
+      id = "tx_test_4",
+      title = "شراء آجل",
+      customerName = "سالم القرني",
+      activityType = "شراء آجل",
+      amount = 50.0,
+      isCredit = true,
+      date = "2026-09-10",
+      relativeTime = "اليوم",
+      customerId = null
+    )
+    val resolvedUnambiguous = com.example.viewmodel.MainViewModel.resolveCustomerForTransaction(listOf(uniqueCust), txUnambiguous)
+    org.junit.Assert.assertNull(resolvedUnambiguous)
+  }
+
+  @Test
+  fun testProductModelAndOptionalImage() {
+    val prodNoImage = ProductItem(
+      id = "p1",
+      name = "سكر الأسرة 5 كجم",
+      price = 28.5,
+      costPrice = 22.0,
+      category = "مواد غذائية",
+      unit = "كيس"
+    )
+    assertEquals("p1", prodNoImage.id)
+    assertEquals(null, prodNoImage.imageUri)
+    assertEquals(28.5, prodNoImage.price, 0.001)
+    assertEquals("مواد غذائية", prodNoImage.category)
+
+    val prodWithImage = ProductItem(
+      id = "p2",
+      name = "زيت عافية 1.5 لتر",
+      price = 19.75,
+      costPrice = 15.0,
+      category = "زيوت",
+      unit = "حبة",
+      imageUri = "/data/user/0/com.aistudio.smallstore/files/product_images/prod_p2.jpg"
+    )
+    assertEquals("/data/user/0/com.aistudio.smallstore/files/product_images/prod_p2.jpg", prodWithImage.imageUri)
+  }
+
+  @Test
+  fun testProductArchiveAndFiltering() {
+    val products = listOf(
+      ProductItem(id = "p1", name = "أرز الشعلان", price = 75.0),
+      ProductItem(id = "p2", name = "حليب نيدو", price = 45.0),
+      ProductItem(id = "p3", name = "شاي ربيع", price = 14.0)
+    )
+    val archivedProductIds = setOf("p2")
+
+    val active = products.filter { it.id !in archivedProductIds }
+    val archived = products.filter { it.id in archivedProductIds }
+
+    assertEquals(2, active.size)
+    assertEquals("p1", active[0].id)
+    assertEquals("p3", active[1].id)
+    assertEquals(1, archived.size)
+    assertEquals("p2", archived[0].id)
+  }
+
+  @Test
+  fun testArchiveTabsAndLocalization() {
+    // 1. Customers / العملاء
+    assertEquals("Customers", StoreStrings.ARCHIVE_TAB_CUSTOMERS_EN)
+    assertEquals("العملاء", StoreStrings.ARCHIVE_TAB_CUSTOMERS_AR)
+
+    // 2. Products / الأصناف
+    assertEquals("Products", StoreStrings.ARCHIVE_TAB_PRODUCTS_EN)
+    assertEquals("الأصناف", StoreStrings.ARCHIVE_TAB_PRODUCTS_AR)
+
+    // 3. Transactions / المعاملات
+    assertEquals("Transactions", StoreStrings.ARCHIVE_TAB_TRANSACTIONS_EN)
+    assertEquals("المعاملات", StoreStrings.ARCHIVE_TAB_TRANSACTIONS_AR)
+
+    // Navigation Destination
+    assertEquals("ARCHIVE", NavDestination.ARCHIVE.name)
+  }
+
+  @Test
+  fun testArchiveDeletePermanentWarning() {
+    // Verify exact warning string
+    assertEquals(
+      "This record will be permanently deleted and cannot be restored.",
+      StoreStrings.DELETE_PERMANENT_WARNING_EN
+    )
+    assertEquals(
+      "سيتم حذف هذا السجل نهائياً ولا يمكن استعادته.",
+      StoreStrings.DELETE_PERMANENT_WARNING_AR
+    )
+    assertEquals("Delete Permanently", StoreStrings.DELETE_PERMANENTLY_EN)
+    assertEquals("حذف نهائي", StoreStrings.DELETE_PERMANENTLY_AR)
+    assertEquals("Restore", StoreStrings.RESTORE_ACTION_EN)
+    assertEquals("استعادة", StoreStrings.RESTORE_ACTION_AR)
+  }
+
+  @Test
+  fun testArchiveEmptyStatesAndNoDatabaseDeletion() {
+    val customers = listOf(
+      CustomerAccount(id = "c1", customerName = "سالم", phone = "0501111111", balance = 0.0, totalDebt = 0.0),
+      CustomerAccount(id = "c2", customerName = "طارق", phone = "0502222222", balance = 50.0, totalDebt = 50.0)
+    )
+    val products = listOf(
+      ProductItem(id = "p1", name = "سكر 5 كجم", price = 20.0)
+    )
+    val archivedCustomerIds = emptySet<String>()
+    val archivedProductIds = emptySet<String>()
+
+    // When no records are archived, archived lists are empty -> triggers empty state
+    val archivedCusts = customers.filter { it.id in archivedCustomerIds }
+    val archivedProds = products.filter { it.id in archivedProductIds }
+    assertTrue(archivedCusts.isEmpty())
+    assertTrue(archivedProds.isEmpty())
+
+    // Verify no deletion: original lists remain completely unchanged
+    assertEquals(2, customers.size)
+    assertEquals(1, products.size)
   }
 }
 

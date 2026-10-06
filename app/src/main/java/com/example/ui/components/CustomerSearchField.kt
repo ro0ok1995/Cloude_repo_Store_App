@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,14 +87,24 @@ fun CustomerSearchField(
     currency: String = AppCurrency.SYMBOL,
     isArabic: Boolean = true,
     showBalance: Boolean = true,
+    simpleSuggestions: Boolean = false,
     inputTestTag: String = "customer_search_input",
     dropdownTestTag: String = "customer_search_suggestions",
     itemTagPrefix: String = "customer_suggestion_",
     maxDropdownHeight: Dp = 240.dp
 ) {
     val focusManager = LocalFocusManager.current
+    val interactionSource = remember { MutableInteractionSource() }
     var isFocused by remember { mutableStateOf(false) }
     var isDropdownOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { interaction ->
+            if (interaction is PressInteraction.Release) {
+                isDropdownOpen = true
+            }
+        }
+    }
 
     val layoutDirection = if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr
 
@@ -126,6 +139,7 @@ fun CustomerSearchField(
                     onSearchQueryChange(newQuery)
                     isDropdownOpen = true
                 },
+                interactionSource = interactionSource,
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { focusState ->
@@ -261,19 +275,31 @@ fun CustomerSearchField(
                                 .heightIn(max = maxDropdownHeight)
                         ) {
                             items(filteredCustomers, key = { it.id }) { customer ->
-                                val isSelected = customer.id == selectedCustomerId
-                                CustomerDropdownRow(
-                                    customer = customer,
-                                    isSelected = isSelected,
-                                    currency = currency,
-                                    showBalance = showBalance,
-                                    testTag = "$itemTagPrefix${customer.id}",
-                                    onClick = {
-                                        onCustomerSelected(customer)
-                                        isDropdownOpen = false
-                                        focusManager.clearFocus()
-                                    }
-                                )
+                                if (simpleSuggestions) {
+                                    SimpleCustomerDropdownRow(
+                                        customer = customer,
+                                        testTag = "$itemTagPrefix${customer.id}",
+                                        onClick = {
+                                            onCustomerSelected(customer)
+                                            isDropdownOpen = false
+                                            focusManager.clearFocus()
+                                        }
+                                    )
+                                } else {
+                                    val isSelected = customer.id == selectedCustomerId
+                                    CustomerDropdownRow(
+                                        customer = customer,
+                                        isSelected = isSelected,
+                                        currency = currency,
+                                        showBalance = showBalance,
+                                        testTag = "$itemTagPrefix${customer.id}",
+                                        onClick = {
+                                            onCustomerSelected(customer)
+                                            isDropdownOpen = false
+                                            focusManager.clearFocus()
+                                        }
+                                    )
+                                }
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                                     thickness = 0.5.dp,
@@ -284,6 +310,42 @@ fun CustomerSearchField(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SimpleCustomerDropdownRow(
+    customer: CustomerAccount,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .testTag(testTag)
+    ) {
+        Text(
+            text = customer.customerName,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (customer.phone.isNotBlank()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = customer.phone,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

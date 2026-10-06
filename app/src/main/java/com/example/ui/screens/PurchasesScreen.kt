@@ -50,6 +50,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,12 +86,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.accounting.SupplierBalanceSummary
+import com.example.accounting.SupplierLedgerEntry
+import com.example.data.db.Purchase
+import com.example.data.db.PurchaseReturn
+import com.example.data.db.Supplier
+import com.example.data.db.SupplierPayment
 import com.example.model.AppCurrency
 import com.example.model.CartItem
 import com.example.model.CustomerAccount
 import com.example.model.LanguageMode
 import com.example.model.ProductItem
+import com.example.model.PurchaseLineRequest
+import com.example.model.PurchaseResult
 import com.example.model.StoreStrings
+import com.example.data.db.Expense
+import com.example.data.db.ExpenseCategory
+import com.example.data.db.FinancialAccount
+import com.example.data.db.PaymentMethod
+import com.example.ui.components.ExpensesSection
+import com.example.ui.components.SupplierPurchasesSection
 import com.example.ui.theme.GeoOutline
 import com.example.ui.theme.GeoOutlineVariant
 import com.example.ui.theme.GeoPrimary
@@ -109,6 +126,13 @@ fun PurchasesScreen(
     searchQuery: String = "",
     isCartExpanded: Boolean = false,
     languageMode: LanguageMode = LanguageMode.ARABIC,
+    suppliers: List<Supplier> = emptyList(),
+    supplierPurchases: List<Purchase> = emptyList(),
+    supplierPayments: List<SupplierPayment> = emptyList(),
+    expenses: List<Expense> = emptyList(),
+    expenseCategories: List<ExpenseCategory> = emptyList(),
+    financialAccounts: List<FinancialAccount> = emptyList(),
+    paymentMethods: List<PaymentMethod> = emptyList(),
     onBackClick: () -> Unit = {},
     onSearchQueryChange: (String) -> Unit = {},
     onAddToCart: (ProductItem) -> Unit = {},
@@ -119,6 +143,15 @@ fun PurchasesScreen(
     onClearCustomer: () -> Unit = {},
     onCompleteTransaction: () -> Unit = {},
     onCompleteTransactionWithItems: ((List<CartItem>) -> Unit)? = null,
+    onAddSupplier: (name: String, phone: String, address: String?, notes: String?, onComplete: (Result<Supplier>) -> Unit) -> Unit = { _, _, _, _, _ -> },
+    onRecordPurchase: (supplierId: String, lines: List<PurchaseLineRequest>, paidAmount: Double, financialAccountId: String?, notes: String?, date: String, onComplete: (Result<PurchaseResult>) -> Unit) -> Unit = { _, _, _, _, _, _, _ -> },
+    onRecordSupplierPayment: (supplierId: String, amount: Double, date: String, financialAccountId: String?, notes: String?, onComplete: (Result<SupplierPayment>) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onRecordPurchaseReturn: ((purchaseId: String, returnLines: List<com.example.model.PurchaseReturnLineRequest>, reason: String, date: String, onComplete: (Result<PurchaseReturn>) -> Unit) -> Unit)? = null,
+    onRecordExpense: (categoryId: String, amount: Double, financialAccountId: String, paymentMethodId: String?, date: String?, description: String, onComplete: (Result<Expense>) -> Unit) -> Unit = { _, _, _, _, _, _, _ -> },
+    onAddExpenseCategory: (name: String, description: String?, onComplete: (Result<ExpenseCategory>) -> Unit) -> Unit = { _, _, _ -> },
+    onGetSupplierBalance: (suspend (supplierId: String) -> SupplierBalanceSummary)? = null,
+    onGetSupplierStatement: (suspend (supplierId: String) -> List<SupplierLedgerEntry>)? = null,
+    onGetPurchaseLines: suspend (purchaseId: String) -> List<com.example.data.db.PurchaseLine> = { emptyList() },
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
@@ -127,10 +160,11 @@ fun PurchasesScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     var showCustomerPicker by remember { mutableStateOf(false) }
+    var activeSectionTab by remember { mutableIntStateOf(0) }
 
     val totalCartItems = cart.sumOf { it.quantity }
     val totalCartAmount = cart.sumOf { it.product.price * it.quantity }
-    val isCheckoutEnabled = customer != null && cart.isNotEmpty()
+    val isCheckoutEnabled = cart.isNotEmpty() && (customer == null || customer.isArchived.not())
 
     Scaffold(
         modifier = modifier
@@ -142,39 +176,68 @@ fun PurchasesScreen(
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 1.dp
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = {
-                            focusManager.clearFocus()
-                            onBackClick()
-                        },
-                        modifier = Modifier.testTag("purchases_back_button")
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = if (isArabic) "رجوع" else "Back",
-                            tint = MaterialTheme.colorScheme.onSurface
+                        IconButton(
+                            onClick = {
+                                focusManager.clearFocus()
+                                onBackClick()
+                            },
+                            modifier = Modifier.testTag("purchases_back_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = if (isArabic) "رجوع" else "Back",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isArabic) StoreStrings.PURCHASES_AR else StoreStrings.PURCHASES_EN,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.testTag("purchases_screen_title")
                         )
                     }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (isArabic) StoreStrings.PURCHASES_AR else StoreStrings.PURCHASES_EN,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.testTag("purchases_screen_title")
-                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = activeSectionTab == 0,
+                            onClick = { activeSectionTab = 0 },
+                            label = { Text(if (isArabic) "نقطة البيع (السلة)" else "POS Cart") },
+                            modifier = Modifier.testTag("tab_purchases_pos")
+                        )
+                        FilterChip(
+                            selected = activeSectionTab == 1,
+                            onClick = { activeSectionTab = 1 },
+                            label = { Text(if (isArabic) "مشتريات الموردين" else "Suppliers & Purchases") },
+                            modifier = Modifier.testTag("tab_purchases_suppliers")
+                        )
+                        FilterChip(
+                            selected = activeSectionTab == 2,
+                            onClick = { activeSectionTab = 2 },
+                            label = { Text(if (isArabic) "المصروفات" else "Expenses") },
+                            modifier = Modifier.testTag("tab_purchases_expenses")
+                        )
+                    }
                 }
             }
         },
         bottomBar = {
+            if (activeSectionTab == 0) {
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 8.dp,
@@ -399,8 +462,41 @@ fun PurchasesScreen(
                     }
                 }
             }
+            }
         }
     ) { innerPadding ->
+        if (activeSectionTab == 1) {
+            SupplierPurchasesSection(
+                suppliers = suppliers,
+                purchases = supplierPurchases,
+                supplierPayments = supplierPayments,
+                products = products,
+                languageMode = languageMode,
+                onAddSupplier = onAddSupplier,
+                onRecordPurchase = onRecordPurchase,
+                onRecordSupplierPayment = onRecordSupplierPayment,
+                onGetSupplierBalance = onGetSupplierBalance ?: { SupplierBalanceSummary(it) },
+                onGetSupplierStatement = onGetSupplierStatement ?: { emptyList() },
+                onGetPurchaseLines = onGetPurchaseLines,
+                onRecordPurchaseReturn = onRecordPurchaseReturn,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            )
+        } else if (activeSectionTab == 2) {
+            ExpensesSection(
+                expenses = expenses,
+                expenseCategories = expenseCategories,
+                financialAccounts = financialAccounts,
+                paymentMethods = paymentMethods,
+                languageMode = languageMode,
+                onRecordExpense = onRecordExpense,
+                onAddExpenseCategory = onAddExpenseCategory,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            )
+        } else {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -525,6 +621,7 @@ fun PurchasesScreen(
                 }
             }
         }
+        }
     }
 
     if (showCustomerPicker) {
@@ -539,534 +636,4 @@ fun PurchasesScreen(
             }
         )
     }
-}
-
-@Composable
-private fun CustomerSelectorCard(
-    selectedCustomer: CustomerAccount?,
-    isArabic: Boolean,
-    onSelectClick: () -> Unit,
-    onChangeClick: () -> Unit,
-    onClearClick: () -> Unit
-) {
-    if (selectedCustomer == null) {
-        Card(
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(
-                    width = 1.5.dp,
-                    color = GeoPrimary.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(14.dp)
-                )
-                .clickable { onSelectClick() }
-                .testTag("customer_selector_empty")
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(GeoPrimary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PersonAdd,
-                                contentDescription = null,
-                                tint = GeoPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = if (isArabic) StoreStrings.SELECT_CUSTOMER_AR else StoreStrings.SELECT_CUSTOMER_EN,
-                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "*",
-                                    color = StatusRed,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Text(
-                                text = if (isArabic) StoreStrings.SELECT_CUSTOMER_REQUIRED_AR else StoreStrings.SELECT_CUSTOMER_REQUIRED_EN,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    OutlinedButton(
-                        onClick = onSelectClick,
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.testTag("choose_customer_button")
-                    ) {
-                        Text(
-                            text = if (isArabic) "اختيار" else "Choose",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = GeoPrimary
-                        )
-                    }
-                }
-            }
-        }
-    } else {
-        Card(
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(width = 1.dp, color = GeoOutlineVariant, shape = RoundedCornerShape(14.dp))
-                .testTag("customer_selector_selected")
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(GeoPrimary.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = selectedCustomer.customerName.take(1),
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = GeoPrimary
-                            )
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = selectedCustomer.customerName,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = selectedCustomer.phone,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        if (selectedCustomer.balance > 0) {
-                            Text(
-                                text = if (isArabic) "مدين بـ ${AppCurrency.formatAmountWithDecimals(selectedCustomer.balance, isArabic = true)}" else "Owes ${AppCurrency.formatAmountWithDecimals(selectedCustomer.balance, isArabic = false)}",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = StatusRed
-                            )
-                        } else {
-                            Text(
-                                text = if (isArabic) "خالص (لا يوجد ديون)" else "Settled",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = StatusGreen
-                            )
-                        }
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(
-                        onClick = onChangeClick,
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.testTag("change_customer_button")
-                    ) {
-                        Text(
-                            text = if (isArabic) StoreStrings.CHANGE_CUSTOMER_AR else StoreStrings.CHANGE_CUSTOMER_EN,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = GeoPrimary
-                        )
-                    }
-                    IconButton(
-                        onClick = onClearClick,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = if (isArabic) "مسح العميل" else "Clear customer",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProductGridCard(
-    product: ProductItem,
-    quantityInCart: Int,
-    currency: String,
-    onCardClick: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(
-                width = if (quantityInCart > 0) 1.5.dp else 1.dp,
-                color = if (quantityInCart > 0) GeoPrimary else GeoOutlineVariant,
-                shape = RoundedCornerShape(14.dp)
-            )
-            .clickable { onCardClick() }
-            .testTag("product_card_${product.id}")
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(96.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        if (quantityInCart > 0) GeoPrimary.copy(alpha = 0.08f)
-                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Inventory2,
-                    contentDescription = null,
-                    tint = if (quantityInCart > 0) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(36.dp)
-                )
-                if (quantityInCart > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(6.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(GeoPrimary)
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = "× $quantityInCart",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = product.name,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                minLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = String.format(Locale.US, "%.2f %s", product.price, currency),
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    ),
-                    color = GeoPrimary
-                )
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(GeoPrimary.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add",
-                        tint = GeoPrimary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CartLineItemRow(
-    item: CartItem,
-    currency: String,
-    isArabic: Boolean,
-    onIncrement: () -> Unit,
-    onDecrement: () -> Unit,
-    onRemove: () -> Unit
-) {
-    val lineTotal = item.product.price * item.quantity
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.product.name,
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = String.format(Locale.US, "%.2f %s × %d = %.2f %s", item.product.price, currency, item.quantity, lineTotal, currency),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { onDecrement() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Remove,
-                    contentDescription = "Decrease",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-            Text(
-                text = "${item.quantity}",
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(GeoPrimary)
-                    .clickable { onIncrement() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Increase",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(6.dp))
-            IconButton(
-                onClick = onRemove,
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = if (isArabic) "حذف العنصر" else "Remove item",
-                    tint = StatusRed,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CustomerPickerDialog(
-    customers: List<CustomerAccount>,
-    selectedCustomerId: String?,
-    isArabic: Boolean,
-    onDismiss: () -> Unit,
-    onSelectCustomer: (CustomerAccount) -> Unit
-) {
-    var searchQuery by remember { mutableStateOf("") }
-    val filteredCustomers = remember(customers, searchQuery) {
-        if (searchQuery.isBlank()) customers
-        else {
-            val q = searchQuery.trim().lowercase()
-            customers.filter { it.customerName.lowercase().contains(q) || it.phone.contains(q) }
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = if (isArabic) StoreStrings.SELECT_CUSTOMER_AR else StoreStrings.SELECT_CUSTOMER_EN,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-            )
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Search field inside dialog
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = if (isArabic) StoreStrings.SEARCH_CUSTOMER_AR else StoreStrings.SEARCH_CUSTOMER_EN,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(32.dp)) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                        focusedBorderColor = GeoPrimary,
-                        unfocusedBorderColor = GeoOutline
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("dialog_customer_search_input")
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (filteredCustomers.isEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = if (isArabic) "لا يوجد عملاء مطابقون" else "No matching customers found",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 280.dp)
-                    ) {
-                        items(filteredCustomers, key = { it.id }) { customer ->
-                            val isSelected = customer.id == selectedCustomerId
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(
-                                        if (isSelected) GeoPrimary.copy(alpha = 0.12f)
-                                        else Color.Transparent
-                                    )
-                                    .clickable { onSelectCustomer(customer) }
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = customer.customerName,
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = if (isSelected) GeoPrimary else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = customer.phone,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "Selected",
-                                        tint = GeoPrimary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            HorizontalDivider(
-                                color = GeoOutlineVariant.copy(alpha = 0.4f),
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = if (isArabic) "إلغاء" else "Cancel",
-                    color = GeoPrimary
-                )
-            }
-        },
-        shape = RoundedCornerShape(16.dp),
-        containerColor = MaterialTheme.colorScheme.surface
-    )
 }

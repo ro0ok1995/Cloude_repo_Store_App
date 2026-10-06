@@ -33,7 +33,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,12 +58,13 @@ fun MoreScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            .testTag("more_screen")
+            .padding(16.dp)
+            .testTag("more_screen"),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // STORE SUMMARY CARD
+        // -------------------------------------------------------------
+        // 1: Store / Store Information
+        // -------------------------------------------------------------
         Card(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -74,6 +74,7 @@ fun MoreScreen(
                 .border(width = 1.dp, color = GeoOutlineVariant, shape = RoundedCornerShape(14.dp))
                 .clickable { onNavigate(NavDestination.STORE_INFORMATION) }
                 .testTag("more_store_card")
+                .testTag("more_item_store_info")
         ) {
             Row(
                 modifier = Modifier
@@ -98,7 +99,9 @@ fun MoreScreen(
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = storeInfo.storeName,
+                        text = storeInfo.storeName.ifBlank {
+                            if (isArabic) StoreStrings.STORE_INFORMATION_AR else StoreStrings.STORE_INFORMATION_EN
+                        },
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
@@ -107,7 +110,9 @@ fun MoreScreen(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = storeInfo.phone.ifBlank { if (isArabic) "إدارة بيانات المتجر" else "Manage store info" },
+                        text = storeInfo.phone.ifBlank {
+                            if (isArabic) "إدارة بيانات ومعلومات المتجر" else "Manage store profile & information"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -121,9 +126,9 @@ fun MoreScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // SECTION: MAIN DESTINATIONS
+        // -------------------------------------------------------------
+        // 2: App Settings
+        // -------------------------------------------------------------
         Card(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -131,96 +136,181 @@ fun MoreScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .border(width = 1.dp, color = GeoOutlineVariant, shape = RoundedCornerShape(14.dp))
+                .clickable { onNavigate(NavDestination.APP_SETTINGS) }
+                .testTag("more_item_settings")
         ) {
-            Column {
-                MoreNavRow(
-                    icon = Icons.Default.Storefront,
-                    label = if (isArabic) StoreStrings.STORE_INFORMATION_AR else StoreStrings.STORE_INFORMATION_EN,
-                    testTag = "more_item_store_info",
-                    onClick = { onNavigate(NavDestination.STORE_INFORMATION) }
-                )
-                MoreNavDivider()
-                MoreNavRow(
-                    icon = Icons.Default.Settings,
-                    label = if (isArabic) StoreStrings.APP_SETTINGS_AR else StoreStrings.APP_SETTINGS_EN,
-                    testTag = "more_item_settings",
-                    onClick = { onNavigate(NavDestination.APP_SETTINGS) }
-                )
-                MoreNavDivider()
-                MoreNavRow(
-                    icon = Icons.Default.CloudDownload,
-                    label = if (isArabic) StoreStrings.DATA_CENTER_AR else StoreStrings.DATA_CENTER_EN,
-                    testTag = "more_item_data_center",
-                    onClick = { onNavigate(NavDestination.DATA_CENTER) }
-                )
-                MoreNavDivider()
-                MoreNavRow(
-                    icon = Icons.Default.Info,
-                    label = if (isArabic) StoreStrings.ABOUT_SMALLSTORE_AR else StoreStrings.ABOUT_SMALLSTORE_EN,
-                    testTag = "more_item_about",
-                    onClick = { onNavigate(NavDestination.ABOUT) }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-    }
-}
-
-@Composable
-private fun MoreNavRow(
-    icon: ImageVector,
-    label: String,
-    testTag: String,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-            .testTag(testTag),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-            shape = RoundedCornerShape(8.dp),
-            modifier = Modifier.size(34.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = GeoPrimary.copy(alpha = 0.10f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = null,
+                            tint = GeoPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isArabic) StoreStrings.APP_SETTINGS_AR else StoreStrings.APP_SETTINGS_EN,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isArabic) {
+                            "اللغة، المظهر، السمات، النسخ الاحتياطي، الإشعارات"
+                        } else {
+                            "Language, appearance, themes, backup, notifications"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Icon(
-                    imageVector = icon,
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = GeoPrimary,
-                    modifier = Modifier.size(18.dp)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
-        Spacer(modifier = Modifier.width(14.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium.copy(
-                fontWeight = FontWeight.Medium,
-                fontSize = 14.sp
-            ),
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f)
-        )
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
 
-@Composable
-private fun MoreNavDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(GeoOutlineVariant.copy(alpha = 0.5f))
-    )
+        // -------------------------------------------------------------
+        // 3: Data Center
+        // -------------------------------------------------------------
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(width = 1.dp, color = GeoOutlineVariant, shape = RoundedCornerShape(14.dp))
+                .clickable { onNavigate(NavDestination.DATA_CENTER) }
+                .testTag("more_item_data_center")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = GeoPrimary.copy(alpha = 0.10f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.CloudDownload,
+                            contentDescription = null,
+                            tint = GeoPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isArabic) StoreStrings.DATA_CENTER_AR else StoreStrings.DATA_CENTER_EN,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isArabic) "العملاء، المنتجات، الأرشيف" else "Customers, products, archive",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        // -------------------------------------------------------------
+        // 4: About SmallStore
+        // -------------------------------------------------------------
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(width = 1.dp, color = GeoOutlineVariant, shape = RoundedCornerShape(14.dp))
+                .clickable { onNavigate(NavDestination.ABOUT) }
+                .testTag("more_item_about")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = GeoPrimary.copy(alpha = 0.10f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = GeoPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isArabic) StoreStrings.ABOUT_SMALLSTORE_AR else StoreStrings.ABOUT_SMALLSTORE_EN,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isArabic) {
+                            "معلومات التطبيق، سياسة الخصوصية، شروط الاستخدام، الدعم الفني"
+                        } else {
+                            "App info, privacy policy, terms of use, support"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+    }
 }

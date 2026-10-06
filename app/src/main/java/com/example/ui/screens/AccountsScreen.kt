@@ -72,6 +72,7 @@ import com.example.model.LanguageMode
 import com.example.model.SettlementType
 import com.example.model.StoreStrings
 import com.example.model.TransactionItem
+import com.example.accounting.FinancialReportCalculator
 import com.example.ui.components.CustomerSearchField
 import com.example.ui.theme.GeoOutline
 import com.example.ui.theme.GeoOutlineVariant
@@ -98,7 +99,7 @@ fun AccountsScreen(
     onCustomerClick: (CustomerAccount) -> Unit,
     onOpenAddCustomerDialog: () -> Unit,
     onCloseAddCustomerDialog: () -> Unit,
-    onAddCustomer: (name: String, phone: String, initialDebt: Double) -> Unit,
+    onAddCustomer: (name: String, phone: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
@@ -114,15 +115,22 @@ fun AccountsScreen(
         else pool.filter { it.customerName.lowercase().contains(q) || it.phone.contains(q) }
     }
 
-    val sortedAccounts = remember(accounts, sortOption, transactions) {
+    val customerCashTotals = remember(transactions) {
+        transactions.groupBy { it.customerId }.mapValues { (_, txs) ->
+            FinancialReportCalculator.calculate(txs).cashSales
+        }
+    }
+
+    val customerBalances = remember(accounts) {
+        accounts.associate { customer -> customer.id to customer.balance }
+    }
+
+    val sortedAccounts = remember(accounts, sortOption, customerCashTotals, customerBalances) {
         when (sortOption) {
             AccountSortOption.DEFAULT -> accounts
-            AccountSortOption.HIGHEST_DEBT -> accounts.sortedByDescending { it.balance }
+            AccountSortOption.HIGHEST_DEBT -> accounts.sortedByDescending { customerBalances[it.id] ?: 0.0 }
             AccountSortOption.HIGHEST_CASH -> accounts.sortedByDescending { customer ->
-                transactions.filter {
-                    it.customerName == customer.customerName && !it.isCredit &&
-                    (it.activityType.contains("شراء كاش") || it.activityType.contains("Cash") || (!it.activityType.contains("تسديد") && !it.activityType.contains("Payment")))
-                }.sumOf { it.amount }
+                customerCashTotals[customer.id] ?: 0.0
             }
         }
     }
@@ -186,15 +194,16 @@ fun AccountsScreen(
                 onSearchQueryChange = onSearchQueryChange,
                 onCustomerSelected = { customer ->
                     onSearchQueryChange(customer.customerName)
-                    onCustomerClick(customer)
                 },
                 onClearSelection = {
                     onSearchQueryChange("")
                 },
-                selectedCustomerId = selectedCustomerDetails?.id,
+                selectedCustomerId = null,
                 placeholderText = if (isArabic) StoreStrings.SEARCH_CUSTOMER_ACCOUNTS_AR else StoreStrings.SEARCH_CUSTOMER_ACCOUNTS_EN,
                 currency = currency,
                 isArabic = isArabic,
+                showBalance = false,
+                simpleSuggestions = true,
                 inputTestTag = "accounts_search_input",
                 dropdownTestTag = "accounts_search_results_overlay",
                 itemTagPrefix = "search_result_item_"
@@ -426,8 +435,10 @@ fun AccountsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 items(items = sortedAccounts, key = { it.id }) { customer ->
+                    val liveBalance = customerBalances[customer.id] ?: 0.0
                     CustomerCardItem(
                         customer = customer,
+                        balance = liveBalance,
                         currency = currency,
                         isArabic = isArabic,
                         onClick = { onCustomerClick(customer) }
@@ -452,12 +463,13 @@ fun AccountsScreen(
 @Composable
 private fun CustomerCardItem(
     customer: CustomerAccount,
+    balance: Double,
     currency: String,
     isArabic: Boolean = true,
     onClick: () -> Unit
 ) {
-    val hasDebt = customer.balance > 0
-    val isPaidUp = customer.balance == 0.0
+    val hasDebt = balance > 0.001
+    val isPaidUp = Math.abs(balance) <= 0.001
 
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -539,7 +551,7 @@ private fun CustomerCardItem(
                                 Locale.US,
                                 "%s%,.2f %s",
                                 if (hasDebt) "" else "-",
-                                customer.balance,
+                                balance,
                                 currency
                             ),
                             fontSize = 12.sp,
@@ -565,12 +577,11 @@ private fun CustomerCardItem(
 private fun AddCustomerDialog(
     isArabic: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, phone: String, initialDebt: Double) -> Unit
+    onConfirm: (name: String, phone: String) -> Unit
 ) {
     val focusManager = LocalFocusManager.current
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
-    var initialDebtStr by remember { mutableStateOf("") }
     var nameError by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -626,20 +637,6 @@ private fun AddCustomerDialog(
                         .fillMaxWidth()
                         .testTag("add_customer_phone_field")
                 )
-
-                OutlinedTextField(
-                    value = initialDebtStr,
-                    onValueChange = { initialDebtStr = it },
-                    label = {
-                        Text(if (isArabic) "الرصيد الافتتاحي / دين سابق (اختياري)" else "Initial Debt / Balance (optional)")
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("add_customer_debt_field")
-                )
             }
         },
         confirmButton = {
@@ -649,8 +646,7 @@ private fun AddCustomerDialog(
                         nameError = true
                     } else {
                         focusManager.clearFocus()
-                        val debt = initialDebtStr.toDoubleOrNull() ?: 0.0
-                        onConfirm(name, phone, debt)
+                        onConfirm(name.trim(), phone.trim())
                     }
                 },
                 shape = RoundedCornerShape(8.dp),

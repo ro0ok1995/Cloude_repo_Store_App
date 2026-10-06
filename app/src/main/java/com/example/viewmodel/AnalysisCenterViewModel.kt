@@ -2,11 +2,26 @@ package com.example.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.accounting.CustomerLedgerCalculator
+import com.example.accounting.FinancialReportCalculator
+import com.example.data.db.TransactionItemLineEntity
+import com.example.model.AnalyticsExportDataPreparer
+import com.example.model.AnalyticsReportData
+import com.example.model.AppCurrency
 import com.example.model.CustomerAccount
+import com.example.model.OperationStatus
 import com.example.model.PeriodFilter
+import com.example.model.SaleType
 import com.example.model.TransactionItem
+import com.example.model.TransactionType
+import com.example.model.epochTimestampMillis
+import com.example.model.typedOperationStatus
+import com.example.model.typedSaleType
+import com.example.model.typedTransactionType
+import com.example.ui.components.BreakdownChartType
 import com.example.util.ReportPreviewRow
 import com.example.util.StatementRow
+import com.example.util.ReportPresentationUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -110,37 +125,34 @@ object DebtAgingUtils {
         today: LocalDate = LocalDate.now(),
         isArabic: Boolean = false
     ): CustomerDebtAgingResult {
-        val outstandingDebt = if (customer.totalDebt > 0) customer.totalDebt else customer.balance.coerceAtLeast(0.0)
+        // Authoritative ledger calculation (CustomerLedgerCalculator source of truth):
+        val ledgerSummary = CustomerLedgerCalculator.calculateCustomerBalance(customer.id, allTransactions)
 
-        // Find customer's debt/credit transactions
-        val customerDebtTxs = allTransactions.filter { tx ->
-            tx.customerName.equals(customer.customerName, ignoreCase = true) &&
-            (tx.isCredit || tx.activityType.contains("آجل") || tx.activityType.contains("دين") || tx.activityType.contains("Debt") || tx.activityType.contains("شراء بالدين"))
+        // Net authoritative customer balance (never use cumulative historical customer.totalDebt):
+        val currentBalance = ledgerSummary.balance
+        // Active outstanding receivable obligation (balance > 0 means customer owes store):
+        val outstandingDebt = currentBalance.coerceAtLeast(0.0)
+
+        // Convert customer transactions to typed ledger entries:
+        val customerEntries = CustomerLedgerCalculator.toLedgerEntries(customer.id, allTransactions)
+
+        // Candidate receivable entries: active operations that created receivable debit:
+        val candidateEntries = customerEntries.filter { entry ->
+            entry.operationStatus != OperationStatus.REVERSED && entry.debit > 0.0001
         }.sortedByDescending { it.date }
 
-        val details = customerDebtTxs.map { tx ->
-            val days = computeDaysOld(tx.date, today)
-            TransactionAgingDetail(
-                transactionId = tx.id,
-                date = tx.date,
-                amount = tx.amount,
-                daysOld = days,
-                bucketLabel = getBucketLabel(days, isArabic)
-            )
-        }
-
-        if (outstandingDebt <= 0.0) {
+        if (outstandingDebt <= 0.0001) {
             return CustomerDebtAgingResult(
                 customerId = customer.id,
                 customerName = customer.customerName,
                 phone = customer.phone,
-                currentBalance = customer.balance,
+                currentBalance = currentBalance,
                 currentDebt = 0.0,
                 bucket0To30 = 0.0,
                 bucket31To60 = 0.0,
                 bucket61To90 = 0.0,
                 bucket90Plus = 0.0,
-                individualTransactions = details
+                individualTransactions = emptyList()
             )
         }
 
@@ -150,22 +162,34 @@ object DebtAgingUtils {
         var b31To60 = 0.0
         var b61To90 = 0.0
         var b90Plus = 0.0
+        val activeDetails = mutableListOf<TransactionAgingDetail>()
 
-        for (txDetail in details) {
-            if (remainingDebt <= 0.0) break
-            val alloc = minOf(remainingDebt, txDetail.amount)
-            remainingDebt -= alloc
+        for (entry in candidateEntries) {
+            if (remainingDebt <= 0.0001) break
+            val alloc = minOf(remainingDebt, entry.debit)
+            remainingDebt = (remainingDebt - alloc).coerceAtLeast(0.0)
+            val days = computeDaysOld(entry.date, today)
+            val bucketLabel = getBucketLabel(days, isArabic)
             when {
-                txDetail.daysOld in 0..30 -> b0To30 += alloc
-                txDetail.daysOld in 31..60 -> b31To60 += alloc
-                txDetail.daysOld in 61..90 -> b61To90 += alloc
+                days in 0..30 -> b0To30 += alloc
+                days in 31..60 -> b31To60 += alloc
+                days in 61..90 -> b61To90 += alloc
                 else -> b90Plus += alloc
             }
+            activeDetails.add(
+                TransactionAgingDetail(
+                    transactionId = entry.transactionId,
+                    date = entry.date,
+                    amount = alloc,
+                    daysOld = days,
+                    bucketLabel = bucketLabel
+                )
+            )
         }
 
         // Any leftover debt not covered by recorded debt transactions (e.g. initial debt balance)
         // is placed in 90+ days bucket
-        if (remainingDebt > 0.0) {
+        if (remainingDebt > 0.0001) {
             b90Plus += remainingDebt
         }
 
@@ -173,13 +197,13 @@ object DebtAgingUtils {
             customerId = customer.id,
             customerName = customer.customerName,
             phone = customer.phone,
-            currentBalance = customer.balance,
+            currentBalance = currentBalance,
             currentDebt = outstandingDebt,
             bucket0To30 = b0To30,
             bucket31To60 = b31To60,
             bucket61To90 = b61To90,
             bucket90Plus = b90Plus,
-            individualTransactions = details
+            individualTransactions = activeDetails
         )
     }
 
@@ -233,8 +257,8 @@ object DateFilterUtils {
     /**
      * Checks if a transaction date falls within the requested period filter.
      * Computes dynamically from current device date (LocalDate.now()):
-     * - TODAY: Transaction date equals today.
-     * - WEEK: Transaction date is within the last 7 days up to today inclusive (today.minusDays(6)..today).
+     * - ALL: All available non-archived/current records.
+     * - TODAY: Transaction date equals current calendar day.
      * - MONTH: Transaction date is within the current calendar month (txDate.year == today.year && txDate.month == today.month).
      * - CUSTOM: Transaction date is within customStartDate..customEndDate inclusive.
      */
@@ -245,13 +269,11 @@ object DateFilterUtils {
         customEndDate: LocalDate? = null,
         today: LocalDate = LocalDate.now()
     ): Boolean {
+        if (period == PeriodFilter.ALL) return true
         val txDate = parseDate(dateStr) ?: return false
         return when (period) {
+            PeriodFilter.ALL -> true
             PeriodFilter.TODAY -> txDate.isEqual(today)
-            PeriodFilter.WEEK -> {
-                val weekStart = today.minusDays(6)
-                !txDate.isBefore(weekStart) && !txDate.isAfter(today)
-            }
             PeriodFilter.MONTH -> {
                 txDate.year == today.year && txDate.month == today.month
             }
@@ -261,6 +283,38 @@ object DateFilterUtils {
                 startOk && endOk
             }
         }
+    }
+
+    /**
+     * Resolves the start date boundary for the requested period filter.
+     * Returns null if there is no start boundary (e.g. ALL).
+     */
+    fun getPeriodStartDate(
+        period: PeriodFilter,
+        customStartDate: LocalDate? = null,
+        today: LocalDate = LocalDate.now()
+    ): LocalDate? {
+        return when (period) {
+            PeriodFilter.ALL -> null
+            PeriodFilter.TODAY -> today
+            PeriodFilter.MONTH -> today.withDayOfMonth(1)
+            PeriodFilter.CUSTOM -> customStartDate
+        }
+    }
+
+    /**
+     * Determines whether a transaction date falls strictly before the period start.
+     */
+    fun isDateBeforePeriod(
+        dateStr: String,
+        period: PeriodFilter,
+        customStartDate: LocalDate? = null,
+        today: LocalDate = LocalDate.now()
+    ): Boolean {
+        if (period == PeriodFilter.ALL) return false
+        val startDate = getPeriodStartDate(period, customStartDate, today) ?: return false
+        val txDate = parseDate(dateStr) ?: return false
+        return txDate.isBefore(startDate)
     }
 }
 
@@ -294,6 +348,9 @@ data class AnalysisCenterUiState(
     // Statement tab filters
     val statementFilter: StatementTxFilter = StatementTxFilter.ALL,
 
+    // Statistics tab chart mode (circular/donut, bar/column, combined/combo)
+    val selectedChartType: BreakdownChartType = BreakdownChartType.DONUT,
+
     // Reports tab state
     val selectedReportType: ReportType = ReportType.DEBT_BALANCES,
     val isExporting: Boolean = false,
@@ -304,6 +361,10 @@ class AnalysisCenterViewModel : ViewModel() {
 
     private val _uiState = MutableStateFlow(AnalysisCenterUiState())
     val uiState: StateFlow<AnalysisCenterUiState> = _uiState.asStateFlow()
+
+    fun selectChartType(chartType: BreakdownChartType) {
+        _uiState.update { it.copy(selectedChartType = chartType) }
+    }
 
     fun selectTab(tab: AnalysisTab) {
         _uiState.update { state ->
@@ -505,6 +566,54 @@ class AnalysisCenterViewModel : ViewModel() {
     }
 
     /**
+     * Calculates the customer's opening balance from all relevant ledger transactions
+     * strictly prior to the start of the selected period.
+     */
+    fun calculateOpeningBalance(
+        allTransactions: List<TransactionItem>,
+        selectedCustomer: CustomerAccount?,
+        period: PeriodFilter,
+        customStartDate: LocalDate? = null,
+        customEndDate: LocalDate? = null,
+        today: LocalDate = LocalDate.now()
+    ): Double {
+        if (period == PeriodFilter.ALL) return 0.0
+
+        val customerTransactions = if (selectedCustomer != null) {
+            allTransactions.filter { it.customerId == selectedCustomer.id }
+        } else {
+            allTransactions
+        }
+
+        val priorTransactions = customerTransactions.filter { tx ->
+            DateFilterUtils.isDateBeforePeriod(
+                dateStr = tx.date,
+                period = period,
+                customStartDate = customStartDate,
+                today = today
+            )
+        }
+
+        return if (selectedCustomer != null) {
+            CustomerLedgerCalculator.calculateCustomerBalance(selectedCustomer.id, priorTransactions).balance
+        } else {
+            priorTransactions.sumOf { getTransactionReceivableImpact(it) }
+        }
+    }
+
+    /**
+     * Determines the customer receivable impact (delta) of a transaction.
+     * Enforces the accounting golden rules:
+     * 1. REVERSED operations have 0.0 financial balance impact.
+     * 2. Cash sales (SaleType.CASH) have 0.0 customer receivable impact.
+     * 3. Credit sales (SaleType.CREDIT) increase receivable by creditAmount (or amount).
+     * 4. Mixed sales (SaleType.MIXED) increase receivable ONLY by creditAmount (or amount - paidAmount).
+     * 5. Customer payments and merchandise returns decrease customer receivable.
+     * 6. Archived-but-not-reversed transactions continue to contribute to the balance.
+     */
+    fun getTransactionReceivableImpact(tx: TransactionItem): Double = Companion.getTransactionReceivableImpact(tx)
+
+    /**
      * Helper to compute filtered statement rows with running balances.
      */
     fun computeStatementRows(
@@ -514,17 +623,31 @@ class AnalysisCenterViewModel : ViewModel() {
         period: PeriodFilter,
         customStartDate: LocalDate? = null,
         customEndDate: LocalDate? = null,
-        today: LocalDate = LocalDate.now()
+        today: LocalDate = LocalDate.now(),
+        includeOpeningBalanceRow: Boolean = true,
+        isArabic: Boolean = true
     ): List<StatementRow> {
-        // 1. Filter by customer
-        var txList = if (selectedCustomer != null) {
-            allTransactions.filter { it.customerName.equals(selectedCustomer.customerName, ignoreCase = true) }
+        // 1. Filter by customer (Phase 2: Persistent customer identity)
+        val customerTransactions = if (selectedCustomer != null) {
+            allTransactions.filter { tx ->
+                tx.customerId == selectedCustomer.id
+            }
         } else {
             allTransactions
         }
 
-        // 2. Filter by period using real date math
-        txList = txList.filter { tx ->
+        // 2. Compute opening balance from transactions strictly prior to selected period
+        val openingBalance = calculateOpeningBalance(
+            allTransactions = customerTransactions,
+            selectedCustomer = selectedCustomer,
+            period = period,
+            customStartDate = customStartDate,
+            customEndDate = customEndDate,
+            today = today
+        )
+
+        // 3. Filter transactions falling within the selected period using real date math
+        var txList = customerTransactions.filter { tx ->
             DateFilterUtils.isDateInPeriod(
                 dateStr = tx.date,
                 period = period,
@@ -534,35 +657,108 @@ class AnalysisCenterViewModel : ViewModel() {
             )
         }
 
-        // 3. Filter by transaction type
+        // 4. Filter by transaction type using typed classifications with legacy fallback
         txList = when (filter) {
             StatementTxFilter.ALL -> txList
-            StatementTxFilter.PAYMENT -> txList.filter { it.activityType.contains("تسديد") || it.activityType.contains("Payment") }
-            StatementTxFilter.CASH_PURCHASE -> txList.filter { !it.isCredit && (it.activityType.contains("كاش") || it.activityType.contains("Cash")) }
-            StatementTxFilter.DEBT_PURCHASE -> txList.filter { it.isCredit || it.activityType.contains("آجل") || it.activityType.contains("دين") || it.activityType.contains("Debt") }
+            StatementTxFilter.PAYMENT -> txList.filter { ReportPresentationUtils.isPaymentTransaction(it) }
+            StatementTxFilter.CASH_PURCHASE -> txList.filter {
+                ReportPresentationUtils.cashSalesAmount(it) > FinancialReportCalculator.EPSILON
+            }
+            StatementTxFilter.DEBT_PURCHASE -> txList.filter {
+                ReportPresentationUtils.creditSalesAmount(it) > FinancialReportCalculator.EPSILON
+            }
         }
 
-        // 4. Build statement rows with running balance calculation
-        var running = 0.0
-        return txList.map { tx ->
-            val isPayment = tx.activityType.contains("تسديد") || tx.activityType.contains("Payment")
-            val isDebtPurchase = tx.isCredit || tx.activityType.contains("آجل") || tx.activityType.contains("دين")
-            if (isPayment) {
-                running -= tx.amount
-            } else if (isDebtPurchase) {
-                running += tx.amount
-            }
-            StatementRow(
-                id = tx.id,
-                date = tx.date,
-                customerName = tx.customerName,
-                description = if (tx.notes.isNotBlank()) tx.notes else tx.activityType,
-                type = tx.activityType,
-                isPayment = isPayment,
-                isCreditDebt = isDebtPurchase,
-                amount = tx.amount,
-                runningBalance = running
+        // 5. Build statement rows with running balance calculation
+        // Ensure chronological order for running balance computation using precise epoch timestamp and deterministic secondary key
+        val sortedList = txList.sortedWith(
+            compareBy<TransactionItem> { it.epochTimestampMillis }
+                .thenBy { it.id }
+        )
+
+        var running = openingBalance
+        val rows = ArrayList<StatementRow>()
+
+        if (includeOpeningBalanceRow && period != PeriodFilter.ALL && Math.abs(openingBalance) > 0.0001) {
+            val periodStartStr = DateFilterUtils.getPeriodStartDate(period, customStartDate, today)?.toString() ?: ""
+            rows.add(
+                StatementRow(
+                    id = "opening_balance",
+                    date = periodStartStr,
+                    customerName = selectedCustomer?.customerName ?: "",
+                    description = "رصيد افتتاحي مرحل",
+                    type = "رصيد افتتاحي",
+                    isPayment = false,
+                    isCreditDebt = openingBalance > 0.0,
+                    amount = Math.abs(openingBalance),
+                    runningBalance = openingBalance,
+                    isArchived = false
+                )
             )
+        }
+
+        for (tx in sortedList) {
+            val isPayment = ReportPresentationUtils.isPaymentTransaction(tx)
+            val isDebtPurchase = ReportPresentationUtils.isDebtTransaction(tx)
+
+            val impact = getTransactionReceivableImpact(tx)
+            running += impact
+
+            rows.add(
+                StatementRow(
+                    id = tx.id,
+                    date = tx.date,
+                    customerName = tx.customerNameSnapshot,
+                    description = if (tx.notes.isNotBlank()) tx.notes else tx.title.ifBlank { tx.activityType },
+                    type = ReportPresentationUtils.getTransactionTypeLabel(tx, isArabic, shortLabel = true),
+                    isPayment = isPayment,
+                    isCreditDebt = isDebtPurchase,
+                    amount = tx.amount,
+                    runningBalance = running,
+                    isArchived = tx.isArchived,
+                    isReversed = (tx.typedOperationStatus == OperationStatus.REVERSED)
+                )
+            )
+        }
+
+        return rows
+    }
+
+    /**
+     * Prepares structured Analytics export data reflecting the current state, active period,
+     * selected customer scope (ALL_CUSTOMERS or ONE_SELECTED_CUSTOMER), and selected chart mode.
+     */
+    fun getAnalyticsExportData(
+        transactions: List<TransactionItem>,
+        transactionLines: List<TransactionItemLineEntity> = emptyList(),
+        allCustomers: List<CustomerAccount> = emptyList(),
+        storeName: String = "",
+        currency: String = AppCurrency.SYMBOL,
+        isArabic: Boolean = true,
+        today: LocalDate = LocalDate.now()
+    ): AnalyticsReportData {
+        val state = _uiState.value
+        val (start, end) = getActiveDateRange()
+        return AnalyticsExportDataPreparer.prepareAnalyticsData(
+            transactions = transactions,
+            transactionLines = transactionLines,
+            allCustomers = allCustomers,
+            selectedCustomer = state.selectedCustomer,
+            activePeriod = getActivePeriod(),
+            customStartDate = start,
+            customEndDate = end,
+            selectedChartType = state.selectedChartType,
+            storeName = storeName,
+            currency = currency,
+            isArabic = isArabic,
+            today = today
+        )
+    }
+
+    companion object {
+        fun getTransactionReceivableImpact(tx: TransactionItem): Double {
+            val custId = tx.customerId ?: return 0.0
+            return CustomerLedgerCalculator.calculateCustomerBalance(custId, listOf(tx)).balance
         }
     }
 }

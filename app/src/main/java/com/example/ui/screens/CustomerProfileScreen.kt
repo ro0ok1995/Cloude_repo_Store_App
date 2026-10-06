@@ -24,12 +24,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -39,7 +44,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +65,7 @@ import com.example.model.CustomerAccount
 import com.example.model.LanguageMode
 import com.example.model.StoreStrings
 import com.example.ui.components.CustomerSelectorField
+import com.example.ui.components.RecordAdjustmentDialog
 import com.example.ui.theme.statusGreen
 import com.example.ui.theme.statusGreenContainer
 import com.example.ui.theme.statusRed
@@ -82,6 +93,7 @@ import java.util.Locale
  * - 1. Record Purchase ("تسجيل مشتريات") -> Existing purchases flow.
  * - 2. View Account Statement ("عرض كشف الحساب") -> Existing Analysis Center statement flow.
  * - 3. Record Payment ("تسجيل دفعة سداد") -> Existing Quick Payment flow.
+ * - 4. Record Adjustment ("تسوية / تعديل الرصيد") -> Documented accounting adjustment.
  */
 @Composable
 fun CustomerProfileScreen(
@@ -93,11 +105,15 @@ fun CustomerProfileScreen(
     onRecordPurchase: (CustomerAccount) -> Unit,
     onViewAccountStatement: (CustomerAccount) -> Unit,
     onRecordPayment: (CustomerAccount) -> Unit,
+    onArchiveCustomer: (CustomerAccount) -> Unit = {},
+    onRecordAdjustment: ((direction: String, amount: Double, date: String, reason: String, reference: String?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
     val context = LocalContext.current
     val currency = AppCurrency.SYMBOL
+    var showArchiveConfirmDialog by remember { mutableStateOf(false) }
+    var showAdjustmentDialog by remember { mutableStateOf(false) }
 
     BackHandler {
         onBackClick()
@@ -413,7 +429,7 @@ fun CustomerProfileScreen(
 
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = if (isArabic) StoreStrings.TOTAL_DEBT_AR else StoreStrings.TOTAL_DEBT_EN,
+                                    text = if (isArabic) StoreStrings.HISTORICAL_CREDIT_SALES_AR else StoreStrings.HISTORICAL_CREDIT_SALES_EN,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -425,7 +441,7 @@ fun CustomerProfileScreen(
                                         fontSize = 17.sp
                                     ),
                                     color = MaterialTheme.colorScheme.statusRed,
-                                    modifier = Modifier.testTag("customer_profile_debt")
+                                    modifier = Modifier.testTag("customer_profile_historical_credit_sales")
                                 )
                             }
                         }
@@ -483,9 +499,96 @@ fun CustomerProfileScreen(
                         testTag = "action_record_payment",
                         onClick = { onRecordPayment(customer) }
                     )
+
+                    // 4. Record Adjustment ("تسوية / تعديل الرصيد")
+                    ProfileActionButton(
+                        icon = Icons.Default.Tune,
+                        iconTint = MaterialTheme.colorScheme.tertiary,
+                        iconContainerColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f),
+                        title = if (isArabic) "تسوية / تعديل الرصيد" else "Record Balance Adjustment",
+                        subtitle = if (isArabic) "تسجيل تعديل محاسبي موثق لزيادة أو تخفيض الرصيد" else "Record documented debit/credit balance adjustment",
+                        testTag = "action_record_adjustment",
+                        onClick = { showAdjustmentDialog = true }
+                    )
+
+                    // 5. Archive Customer ("أرشفة العميل") - For ACTIVE customer only
+                    if (!customer.isArchived) {
+                        ProfileActionButton(
+                            icon = Icons.Default.Archive,
+                            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            iconContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            title = if (isArabic) StoreStrings.ARCHIVE_CUSTOMER_AR else StoreStrings.ARCHIVE_CUSTOMER_EN,
+                            subtitle = if (isArabic) StoreStrings.ARCHIVE_CUSTOMER_SUBTITLE_AR else StoreStrings.ARCHIVE_CUSTOMER_SUBTITLE_EN,
+                            testTag = "action_archive_customer",
+                            onClick = { showArchiveConfirmDialog = true }
+                        )
+                    }
                 }
             }
         }
+    }
+
+    if (showArchiveConfirmDialog && customer != null) {
+        AlertDialog(
+            onDismissRequest = { showArchiveConfirmDialog = false },
+            title = {
+                Text(
+                    text = if (isArabic) StoreStrings.ARCHIVE_CONFIRM_TITLE_AR else StoreStrings.ARCHIVE_CONFIRM_TITLE_EN,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = if (isArabic) StoreStrings.ARCHIVE_CONFIRM_MESSAGE_AR else StoreStrings.ARCHIVE_CONFIRM_MESSAGE_EN,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showArchiveConfirmDialog = false
+                        onArchiveCustomer(customer)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.testTag("confirm_archive_customer_button")
+                ) {
+                    Text(
+                        text = if (isArabic) StoreStrings.ARCHIVE_CUSTOMER_AR else StoreStrings.ARCHIVE_CUSTOMER_EN,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showArchiveConfirmDialog = false },
+                    modifier = Modifier.testTag("cancel_archive_customer_button")
+                ) {
+                    Text(
+                        text = if (isArabic) StoreStrings.CANCEL_AR else StoreStrings.CANCEL_EN
+                    )
+                }
+            },
+            modifier = Modifier.testTag("archive_customer_dialog")
+        )
+    }
+
+    if (showAdjustmentDialog && customer != null) {
+        val liveCustomer = allCustomers.find { it.id == customer.id } ?: customer
+        RecordAdjustmentDialog(
+            customer = liveCustomer,
+            currency = currency,
+            isArabic = isArabic,
+            onDismiss = { showAdjustmentDialog = false },
+            onConfirm = { direction, amount, date, reason, reference ->
+                showAdjustmentDialog = false
+                onRecordAdjustment?.invoke(direction, amount, date, reason, reference)
+                val successMsg = if (isArabic) "تم تسجيل التسوية بنجاح" else "Adjustment recorded successfully"
+                Toast.makeText(context, successMsg, Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 }
 

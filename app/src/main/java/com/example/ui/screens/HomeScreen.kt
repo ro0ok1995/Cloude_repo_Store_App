@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import com.example.ui.components.ReversalConfirmationDialog
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -26,10 +27,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -40,9 +48,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,10 +75,20 @@ import androidx.compose.ui.unit.sp
 import com.example.model.AppCurrency
 import com.example.model.CustomerAccount
 import com.example.model.LanguageMode
+import com.example.model.OperationStatus
 import com.example.model.PeriodFilter
+import com.example.model.RefundRequest
+import com.example.model.SaleReturnLineRequest
 import com.example.model.SettlementType
 import com.example.model.StoreStrings
+import com.example.data.db.Sale
+import com.example.data.db.SaleLine
+import com.example.ui.components.RecordSaleReturnDialog
 import com.example.model.TransactionItem
+import com.example.model.TransactionType
+import com.example.model.typedOperationStatus
+import com.example.model.typedTransactionType
+import com.example.accounting.FinancialReportCalculator
 import com.example.ui.components.CustomerSearchField
 import com.example.ui.components.SimpleEmptyState
 import com.example.ui.components.StoreDebtAgingSummaryCard
@@ -76,8 +98,10 @@ import com.example.ui.theme.statusGreen
 import com.example.ui.theme.statusGreenContainer
 import com.example.ui.theme.statusRed
 import com.example.ui.theme.statusRedContainer
+import com.example.viewmodel.DateFilterUtils
 import com.example.viewmodel.DebtAgingUtils
 import com.example.viewmodel.StoreDebtAgingSummary
+import java.time.LocalDate
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -98,11 +122,23 @@ fun HomeScreen(
     onSelectPeriod: (PeriodFilter) -> Unit,
     modifier: Modifier = Modifier,
     allCustomers: List<CustomerAccount> = matchingCustomers,
-    allTransactions: List<TransactionItem> = transactions
+    allTransactions: List<TransactionItem> = transactions,
+    customStartDate: LocalDate? = null,
+    customEndDate: LocalDate? = null,
+    showCustomDatePicker: Boolean = false,
+    onOpenCustomDatePicker: () -> Unit = {},
+    onDismissCustomDatePicker: () -> Unit = {},
+    onSetCustomDateRange: (LocalDate?, LocalDate?) -> Unit = { _, _ -> },
+    onActivityClick: ((TransactionItem) -> Unit)? = null,
+    onReverseTransaction: ((TransactionItem, String) -> Unit)? = null,
+    onReturnTransaction: ((TransactionItem, List<SaleReturnLineRequest>, String, RefundRequest?) -> Unit)? = null,
+    onLoadReturnDetails: (suspend (String) -> Triple<Sale?, List<SaleLine>, Map<String, Int>>)? = null
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
     val currency = AppCurrency.SYMBOL
     val focusManager = LocalFocusManager.current
+    var transactionToReverse by remember { mutableStateOf<TransactionItem?>(null) }
+    var transactionToReturn by remember { mutableStateOf<TransactionItem?>(null) }
 
     val storeAgingSummary = remember(allCustomers, allTransactions, isArabic) {
         DebtAgingUtils.calculateStoreDebtAgingSummary(
@@ -110,6 +146,22 @@ fun HomeScreen(
             allTransactions = allTransactions,
             isArabic = isArabic
         )
+    }
+
+    val periodTransactions = remember(transactions, selectedPeriod, selectedCustomer, customStartDate, customEndDate) {
+        val base = if (selectedCustomer != null) {
+            transactions.filter { it.customerId == selectedCustomer.id }
+        } else {
+            transactions
+        }
+        base.filter { tx ->
+            DateFilterUtils.isDateInPeriod(
+                dateStr = tx.date,
+                period = selectedPeriod,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate
+            )
+        }
     }
 
     Column(
@@ -142,7 +194,7 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 3. PERIOD SELECTOR (Today / Week / Month / Custom)
+            // 3. PERIOD SELECTOR (All / Today / Month / Custom)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -150,17 +202,17 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 PeriodChip(
+                    label = if (isArabic) StoreStrings.PERIOD_ALL_AR else StoreStrings.PERIOD_ALL_EN,
+                    isSelected = selectedPeriod == PeriodFilter.ALL,
+                    testTag = "period_all",
+                    onClick = { onSelectPeriod(PeriodFilter.ALL) },
+                    modifier = Modifier.weight(1f)
+                )
+                PeriodChip(
                     label = if (isArabic) StoreStrings.PERIOD_TODAY_AR else StoreStrings.PERIOD_TODAY_EN,
                     isSelected = selectedPeriod == PeriodFilter.TODAY,
                     testTag = "period_today",
                     onClick = { onSelectPeriod(PeriodFilter.TODAY) },
-                    modifier = Modifier.weight(1f)
-                )
-                PeriodChip(
-                    label = if (isArabic) StoreStrings.PERIOD_WEEK_AR else StoreStrings.PERIOD_WEEK_EN,
-                    isSelected = selectedPeriod == PeriodFilter.WEEK,
-                    testTag = "period_week",
-                    onClick = { onSelectPeriod(PeriodFilter.WEEK) },
                     modifier = Modifier.weight(1f)
                 )
                 PeriodChip(
@@ -179,37 +231,74 @@ fun HomeScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 4. METRICS CARD
-            val periodTransactions = remember(transactions, selectedPeriod, selectedCustomer) {
-                val base = if (selectedCustomer != null) {
-                    transactions.filter { it.customerName == selectedCustomer.customerName }
-                } else {
-                    transactions
-                }
-                base.filter { tx ->
-                    when (selectedPeriod) {
-                        PeriodFilter.TODAY -> tx.date == "2026-09-05" || tx.relativeTime.contains("دقيقة") || tx.relativeTime.contains("ساعة") || tx.relativeTime.contains("الآن")
-                        PeriodFilter.WEEK -> tx.date >= "2026-08-30" || tx.date.startsWith("2026-09")
-                        PeriodFilter.MONTH -> tx.date.startsWith("2026-09")
-                        PeriodFilter.CUSTOM -> true
+            // If CUSTOM is selected, show the date range badge with edit button
+            if (selectedPeriod == PeriodFilter.CUSTOM) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onOpenCustomDatePicker() }
+                        .testTag("home_custom_date_range_display")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DateRange,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            val rangeText = if (customStartDate != null && customEndDate != null) {
+                                "$customStartDate  ←  $customEndDate"
+                            } else if (customStartDate != null) {
+                                if (isArabic) "من $customStartDate" else "From $customStartDate"
+                            } else if (customEndDate != null) {
+                                if (isArabic) "إلى $customEndDate" else "To $customEndDate"
+                            } else {
+                                if (isArabic) "اضغط لتحديد نطاق التاريخ" else "Tap to select date range"
+                            }
+                            Text(
+                                text = rangeText,
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.testTag("home_custom_date_range_text")
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = if (isArabic) "تعديل التاريخ" else "Edit Date Range",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
 
-            val cashSalesAmount = remember(periodTransactions) {
-                periodTransactions
-                    .filter { !it.isCredit && (it.activityType.contains("شراء كاش") || it.activityType.contains("Cash") || (!it.activityType.contains("تسديد") && !it.activityType.contains("Payment"))) }
-                    .sumOf { it.amount }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 4. METRICS CARD
+            val homeBreakdown = remember(periodTransactions) {
+                FinancialReportCalculator.calculate(periodTransactions)
             }
-            // ASSUMPTION: If settlementType is null on historical settlements, default to SettlementType.FULL.
-            val fullSettlementAmount = remember(periodTransactions) {
-                periodTransactions
-                    .filter { (it.activityType.contains("تسديد") || it.activityType.contains("Payment")) && (it.settlementType == SettlementType.FULL || it.settlementType == null) }
-                    .sumOf { it.amount }
-            }
-            val debtAmount = if (selectedCustomer != null) selectedCustomer.balance else totalDebt
+            val cashSalesAmount = homeBreakdown.cashSales
+            val fullSettlementAmount = homeBreakdown.fullSettlementAmount
+            val debtAmount = if (selectedCustomer != null) selectedCustomer.balance.coerceAtLeast(0.0) else if (allCustomers.isNotEmpty()) allCustomers.sumOf { it.balance.coerceAtLeast(0.0) } else totalDebt.coerceAtLeast(0.0)
             val totalActivity = debtAmount + cashSalesAmount + fullSettlementAmount
             val debtPercent = if (totalActivity > 0) ((debtAmount / totalActivity) * 100).roundToInt() else 0
             val cashPercent = if (totalActivity > 0) ((cashSalesAmount / totalActivity) * 100).roundToInt() else 0
@@ -363,7 +452,7 @@ fun HomeScreen(
                 }
             }
 
-            if (transactions.isEmpty()) {
+            if (periodTransactions.isEmpty()) {
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -386,11 +475,26 @@ fun HomeScreen(
                         .testTag("latest_activities_list"),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(items = transactions, key = { it.id }) { tx ->
+                    items(items = periodTransactions, key = { it.id }) { tx ->
+                        val isSale = if (tx.typedTransactionType != null) {
+                            tx.typedTransactionType == TransactionType.SALE
+                        } else {
+                            tx.activityType.contains("فاتورة") || tx.activityType.contains("بيع")
+                        }
+                        val isReversed = tx.typedOperationStatus == OperationStatus.REVERSED
+                        val isReturnEligible = !isReversed && isSale
+
                         ActivityRowCard(
                             transaction = tx,
                             currency = currency,
-                            isArabic = isArabic
+                            isArabic = isArabic,
+                            onClick = if (onActivityClick != null) { { onActivityClick(tx) } } else null,
+                            onReverseClick = if (onReverseTransaction != null && !isReversed) {
+                                { transactionToReverse = tx }
+                            } else null,
+                            onReturnClick = if (onReturnTransaction != null && onLoadReturnDetails != null && isReturnEligible) {
+                                { transactionToReturn = tx }
+                            } else null
                         )
                     }
                     item {
@@ -399,6 +503,45 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    if (showCustomDatePicker) {
+        CustomDateRangePickerDialog(
+            initialStartDate = customStartDate,
+            initialEndDate = customEndDate,
+            isArabic = isArabic,
+            onConfirm = { start, end ->
+                onSetCustomDateRange(start, end)
+            },
+            onDismiss = onDismissCustomDatePicker
+        )
+    }
+
+    if (transactionToReverse != null) {
+        ReversalConfirmationDialog(
+            transaction = transactionToReverse!!,
+            currency = currency,
+            isArabic = isArabic,
+            onConfirm = { reason ->
+                onReverseTransaction?.invoke(transactionToReverse!!, reason)
+                transactionToReverse = null
+            },
+            onDismiss = { transactionToReverse = null }
+        )
+    }
+
+    if (transactionToReturn != null && onLoadReturnDetails != null && onReturnTransaction != null) {
+        RecordSaleReturnDialog(
+            transaction = transactionToReturn!!,
+            currency = currency,
+            isArabic = isArabic,
+            onLoadDetails = onLoadReturnDetails,
+            onConfirm = { lines, reason, refundReq ->
+                onReturnTransaction(transactionToReturn!!, lines, reason, refundReq)
+                transactionToReturn = null
+            },
+            onDismiss = { transactionToReturn = null }
+        )
     }
 }
 
@@ -571,15 +714,26 @@ private fun HomeStatLegendItem(
 private fun ActivityRowCard(
     transaction: TransactionItem,
     currency: String,
-    isArabic: Boolean
+    isArabic: Boolean,
+    onClick: (() -> Unit)? = null,
+    onReverseClick: (() -> Unit)? = null,
+    onReturnClick: (() -> Unit)? = null
 ) {
-    val isCredit = transaction.isCredit
-    val isPayment = transaction.activityType == "تسديد" || transaction.activityType == "Payment"
-    val badgeBg = if (isPayment || isCredit) MaterialTheme.colorScheme.statusGreenContainer else MaterialTheme.colorScheme.statusRedContainer
-    val badgeTint = if (isPayment || isCredit) MaterialTheme.colorScheme.statusGreen else MaterialTheme.colorScheme.statusRed
-    val iconVector = if (isPayment || isCredit) Icons.Default.Add else Icons.Default.Remove
+    val type = transaction.typedTransactionType
+    val isPositiveMovement = when (type) {
+        TransactionType.SALE,
+        TransactionType.CUSTOMER_PAYMENT,
+        TransactionType.PURCHASE_RETURN -> true
+        else -> false
+    }
+    val isReversed = transaction.typedOperationStatus == OperationStatus.REVERSED
+    val badgeBg = if (isPositiveMovement) MaterialTheme.colorScheme.statusGreenContainer else MaterialTheme.colorScheme.statusRedContainer
+    val badgeTint = if (isPositiveMovement) MaterialTheme.colorScheme.statusGreen else MaterialTheme.colorScheme.statusRed
+    val iconVector = if (isPositiveMovement) Icons.Default.Add else Icons.Default.Remove
 
     Card(
+        onClick = { onClick?.invoke() },
+        enabled = onClick != null,
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -610,16 +764,50 @@ private fun ActivityRowCard(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = transaction.customerName,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = transaction.customerNameSnapshot,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (transaction.isArchived) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.testTag("archived_badge_${transaction.id}")
+                        ) {
+                            Text(
+                                text = if (isArabic) "مؤرشف" else "Archived",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (isReversed) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.testTag("reversed_badge_${transaction.id}")
+                        ) {
+                            Text(
+                                text = if (isArabic) "ملغي" else "Reversed",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
@@ -651,7 +839,7 @@ private fun ActivityRowCard(
                     text = String.format(
                         Locale.US,
                         "%s%,.2f %s",
-                        if (isPayment || isCredit) "+" else "-",
+                        if (isPositiveMovement) "+" else "-",
                         transaction.amount,
                         currency
                     ),
@@ -659,7 +847,7 @@ private fun ActivityRowCard(
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     ),
-                    color = if (isPayment || isCredit) MaterialTheme.colorScheme.statusGreen else MaterialTheme.colorScheme.statusRed
+                    color = if (isPositiveMovement) MaterialTheme.colorScheme.statusGreen else MaterialTheme.colorScheme.statusRed
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -667,6 +855,38 @@ private fun ActivityRowCard(
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            if (!isReversed && onReturnClick != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = onReturnClick,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("action_return_${transaction.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Reply,
+                        contentDescription = if (isArabic) "مرتجع مبيعات" else "Sale Return",
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            if (!isReversed && onReverseClick != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = onReverseClick,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("action_reverse_${transaction.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Undo,
+                        contentDescription = if (isArabic) "إلغاء المعاملة" else "Reverse Transaction",
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

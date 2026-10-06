@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,12 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Card
@@ -25,6 +28,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -42,18 +47,18 @@ import com.example.model.ThemeDisplayMode
 import com.example.ui.theme.GeoOutlineVariant
 import com.example.ui.theme.GeoPrimary
 
-typealias AppThemeMode = com.example.model.AppThemeMode
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppSettingsScreen(
     languageMode: LanguageMode,
     themeMode: AppThemeMode,
     displayMode: ThemeDisplayMode,
+    notificationsEnabled: Boolean = true,
     onBackClick: () -> Unit,
     onLanguageChange: (LanguageMode) -> Unit,
     onThemeChange: (AppThemeMode) -> Unit,
     onDisplayModeChange: (ThemeDisplayMode) -> Unit,
+    onNotificationsChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isArabic = languageMode == LanguageMode.ARABIC
@@ -84,9 +89,9 @@ fun AppSettingsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Language Selection
+            // 1. Language Selection
             Card(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -129,7 +134,7 @@ fun AppSettingsScreen(
                 }
             }
 
-            // Display Mode (Light / Dark / Auto)
+            // 2. Appearance Mode (Light / Dark / Auto)
             Card(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -176,7 +181,7 @@ fun AppSettingsScreen(
                 }
             }
 
-            // Palette Theme
+            // 3. Themes (Color Palette)
             Card(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -224,6 +229,51 @@ fun AppSettingsScreen(
                                 .testTag("palette_gold_chip")
                         )
                     }
+                }
+            }
+
+            // 4. Notifications ON/OFF
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, GeoOutlineVariant, RoundedCornerShape(14.dp))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = null,
+                        tint = GeoPrimary
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isArabic) StoreStrings.PREF_ENABLE_NOTIFICATIONS_AR else StoreStrings.PREF_ENABLE_NOTIFICATIONS_EN,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (isArabic) StoreStrings.PREF_ENABLE_NOTIFICATIONS_DESC_AR else StoreStrings.PREF_ENABLE_NOTIFICATIONS_DESC_EN,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = notificationsEnabled,
+                        onCheckedChange = onNotificationsChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.surface,
+                            checkedTrackColor = GeoPrimary
+                        ),
+                        modifier = Modifier.testTag("setting_notifications_switch")
+                    )
                 }
             }
         }
